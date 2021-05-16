@@ -1,0 +1,5 @@
+aiogram
+asyncpg
+SQLAlchemy
+alembic
+pytz
