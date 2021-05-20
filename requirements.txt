@@ -3,3 +3,4 @@ asyncpg
 SQLAlchemy
 alembic
 pytz
+emoji==1.2.0
