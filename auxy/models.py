@@ -1,8 +1,15 @@
 from sqlalchemy.orm import declarative_base
-from sqlalchemy import Column, Integer, String, DateTime
+from sqlalchemy import Column, Integer, String, DateTime, JSON
 
 
 Base = declarative_base()
+
+
+class BotSettings(Base):
+    __tablename__ = 'bot_settings'
+
+    section = Column(String(64), primary_key=True)
+    content = Column(JSON, nullable=False)
 
 
 class User(Base):
