@@ -8,9 +8,9 @@ Base = declarative_base()
 class User(Base):
     __tablename__ = 'users'
 
-    id = Column(Integer, primary_key=True)
+    id = Column(Integer, primary_key=True, autoincrement=False)
     username = Column(String(256))
     first_name = Column(String(256))
     last_name = Column(String(256))
     lang = Column(String(64))
-    joined = Column(DateTime(timezone=True))
+    joined_dt = Column(DateTime(timezone=True))
