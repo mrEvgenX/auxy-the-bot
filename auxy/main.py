@@ -46,7 +46,12 @@ async def start(message: types.Message):
             session.add(user)
             await session.commit()
             await message.answer(
-                f'Привет {user.first_name}, будем знакомы! Я буду помогать вам сохранять дела в порядке.'
+                f'Привет {user.first_name}, будем знакомы! Меня назвали Окси, или Auxy по-английски.'
+                'Это идет от слова auxilary - вспомогательный.\n'
+                'Мое призвание - помогать поддерживать ваши дела в порядке.\n'
+                'Сейчас я учусь напоминать об окончании рабочего дня и необходимости составить план на следующий день. '
+                'В будущем, планируется много другого функционала, но об этом будет рассказано позже.\n'
+                'Чтобы узнать более подробно, что я умею, наберите, пожалуйста, команду /help.'
             )
         else:
             await message.answer(
@@ -68,8 +73,8 @@ async def help_(message: types.Message):
     )
 
 
-@dp.message_handler(commands=['agenda'])
-async def today_agenda(message: types.Message):
+@dp.message_handler(chat_type=types.ChatType.PRIVATE, commands='todo')
+async def todo_for_today(message: types.Message):
     sender = message['from']
     dt = message['date']
     async with OrmSession() as session:
@@ -84,34 +89,89 @@ async def today_agenda(message: types.Message):
                 .order_by(DailyTodoList.created_dt.desc())
             todo_lists_result = await session.execute(select_stmt)
             todo_list = todo_lists_result.scalars().first()
-            message_content = [
-                text('Вот, что вы на сегодня планировали:'),
-                text('')
-            ] + [
-                text(':pushpin: ' + item.text) for item in todo_list.items
-            ] + [
-                text(''),
-                text('Все точно получится!')
-            ]
+            if todo_list:
+                message_content = [
+                    text('Вот, что вы на сегодня планировали:'),
+                    text('')
+                ] + [
+                    text(':pushpin: ' + item.text) for item in todo_list.items
+                ] + [
+                    text(''),
+                    text('Все точно получится!')
+                ]
+            else:
+                message_content = [
+                    text('Никаких планов нет.'),
+                    # TODO предложение создать план и описание способа
+                ]
+            await message.answer(emojize(text(*message_content, sep='\n')))
+
+
+@dp.message_handler(chat_type=types.ChatType.PRIVATE, commands='planned')
+async def todo_for_next_time(message: types.Message):
+    # TODO почти copy-paste, разобраться
+    sender = message['from']
+    dt = message['date']
+    async with OrmSession() as session:
+        user = await session.get(User, sender['id'])
+        if user:
+            select_stmt = select(DailyTodoList) \
+                .options(selectinload(DailyTodoList.items)) \
+                .where(
+                    DailyTodoList.user_id == user.id,
+                    DailyTodoList.for_day == next_working_day(dt).date(),
+                ) \
+                .order_by(DailyTodoList.created_dt.desc())
+            todo_lists_result = await session.execute(select_stmt)
+            todo_list = todo_lists_result.scalars().first()
+            if todo_list:
+                message_content = [
+                    text('Вот, что запланировано вами на следующий рабочий день:'),
+                    text('')
+                ] + [
+                    text(':pushpin: ' + item.text) for item in todo_list.items
+                ] + [
+                    text(''),
+                    text('Но не отвлекайтесь, пожалуйста.')
+                ]
+            else:
+                message_content = [
+                    text('Никаких планов нет.'),
+                    # TODO предложение создать план и описание способа
+                ]
             await message.answer(emojize(text(*message_content, sep='\n')))
 
 
 @dp.message_handler()
 async def create_todo_list_for_tomorrow(message: types.Message):
     # TODO use reply_to_message https://core.telegram.org/bots/api#message
+    # TODO научиться дополнять сегодняшние планы, а не только создавать/дополнять завтрашние
     sender = message['from']
     dt = message['date']
     async with OrmSession() as session:
         user = await session.get(User, sender['id'])
         if user:
+            reply_message_content = []
             parsed_items = [item for item in map(lambda s: s.strip(), message['text'].split('- ')) if item]
-            # TODO try to get existing one
-            tomorrow_todo_list = DailyTodoList(
-                user_id=user.id,
-                created_dt=dt,
-                for_day=next_working_day(dt).date()
-            )
-            reply_message_content = [text('Я запишу, что вы запланировали:'), text('')]
+            select_stmt = select(DailyTodoList) \
+                .options(selectinload(DailyTodoList.items)) \
+                .where(
+                    DailyTodoList.user_id == user.id,
+                    DailyTodoList.for_day == next_working_day(dt).date(),
+                ) \
+                .order_by(DailyTodoList.created_dt.desc())
+            todo_lists_result = await session.execute(select_stmt)
+            tomorrow_todo_list = todo_lists_result.scalars().first()
+            if tomorrow_todo_list:
+                reply_message_content += [text('К тому, что вы уже запланировали я добавлю:'), text('')]
+            else:
+                tomorrow_todo_list = DailyTodoList(
+                    user_id=user.id,
+                    created_dt=dt,
+                    for_day=next_working_day(dt).date()
+                )
+                session.add(tomorrow_todo_list)
+                reply_message_content += [text('Я запишу, что вы запланировали:'), text('')]
             for parsed_item in parsed_items:
                 todo_item = TodoItem(
                     user_id=user.id,
@@ -121,9 +181,10 @@ async def create_todo_list_for_tomorrow(message: types.Message):
                 session.add(todo_item)
                 tomorrow_todo_list.items.append(todo_item)
                 reply_message_content.append(text(':pushpin: ' + parsed_item))
-            session.add(tomorrow_todo_list)
-            reply_message_content.append(text(''))
-            reply_message_content.append(text('Завтра я напомню об этом'))
+            reply_message_content += [
+                text(''),
+                text('Завтра я напомню об этом. Чтобы увидеть все прямо сейчас, наберите, пожалуйста /planned')
+            ]
             await session.commit()
             await message.reply(emojize(text(*reply_message_content, sep='\n')))
 
@@ -138,7 +199,7 @@ async def send_end_of_work_day_reminder():
             )  # TODO force reply
 
 
-async def send_current_agenda_notification(now):
+async def send_todo_for_today_notification(now):
     async with OrmSession() as session:
         select_stmt = select(DailyTodoList) \
             .options(selectinload(DailyTodoList.items)) \
@@ -156,7 +217,7 @@ async def send_current_agenda_notification(now):
                 text(':pushpin: ' + item.text) for item in todo_list.items
             ] + [
                 text(''),
-                text('Все точно получится!')
+                text('Все точно получится!'),
             ]
             await bot.send_message(todo_list.user_id, emojize(text(*message_content, sep='\n')))
 
@@ -178,7 +239,7 @@ async def send_reminder():
     while True:
         now = datetime.now(nsktz)
         if now >= current_agenda_notification_time:
-            await send_current_agenda_notification(now)
+            await send_todo_for_today_notification(now)
             current_agenda_notification_time = nsktz.localize(datetime(2021, 5, 21, 9, 0))
             logging.info('new current_agenda_notification_time %s', current_agenda_notification_time)
         if now >= end_of_workday_notification_time:

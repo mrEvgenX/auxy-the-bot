@@ -1,5 +1,6 @@
 from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy import Table, Column, Integer, String, DateTime, Date, JSON, Text, ForeignKey
+from sqlalchemy.schema import UniqueConstraint
 
 
 Base = declarative_base()
@@ -39,7 +40,7 @@ class DailyTodoList(Base):
     created_dt = Column(DateTime(timezone=True), nullable=False)
     for_day = Column(Date, nullable=False)
     items = relationship('TodoItem', secondary=item_in_list_table)
-    # TODO add unique by "user_id" and "for_day"
+    __table_args__ = (UniqueConstraint('user_id', 'for_day'),)
 
 
 class TodoItem(Base):
