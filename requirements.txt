@@ -3,4 +3,6 @@ asyncpg
 SQLAlchemy
 alembic
 pytz
+python-dateutil
+psycopg2  # for migrations
 emoji==1.2.0

@@ -22,7 +22,8 @@ dp = Dispatcher(bot)
 
 orm_engine = create_async_engine(DATABASE_URI, echo=True)
 OrmSession = sessionmaker(orm_engine, expire_on_commit=False, class_=AsyncSession)
-end_of_workday_reminder_config = dict()
+workday_begin_config = dict()
+workday_end_config = dict()
 
 
 @dp.message_handler(chat_type=types.ChatType.PRIVATE, commands='start')
@@ -195,7 +196,7 @@ async def send_end_of_work_day_reminder():
         async for user in users_rows.scalars():
             await bot.send_message(
                 user.id,
-                end_of_workday_reminder_config['reminder_text']
+                workday_end_config['reminder_text']
             )  # TODO force reply
 
 
@@ -227,37 +228,43 @@ async def send_reminder():
     now = datetime.now(nsktz)
     possible_times = [
         now + relativedelta(weekday=int(weekday), **timing)
-        for weekday, timing in end_of_workday_reminder_config['reminder_timings'].items()
+        for weekday, timing in workday_end_config['reminder_timings'].items()
     ]
-    end_of_workday_notification_time = min(*[possible_time for possible_time in possible_times if possible_time > now])
-    current_agenda_notification_time = now + relativedelta(**end_of_workday_reminder_config['return_tomorrow_agenda_at'])
-    if current_agenda_notification_time <= now:
-        current_agenda_notification_time = next_working_day(current_agenda_notification_time)
+    workday_end_notification_time = min(*[possible_time for possible_time in possible_times if possible_time > now])
 
-    logging.info('current_agenda_notification_time %s', current_agenda_notification_time)
-    logging.info('end_of_workday_notification_time %s', end_of_workday_notification_time)
+    possible_times = [
+        now + relativedelta(weekday=int(weekday), **timing)
+        for weekday, timing in workday_begin_config['reminder_timings'].items()
+    ]
+    workday_begin_notification_time = min(*[possible_time for possible_time in possible_times if possible_time > now])
+
+    logging.info('workday_begin_notification_time %s', workday_begin_notification_time)
+    logging.info('workday_end_notification_time %s', workday_end_notification_time)
     while True:
         now = datetime.now(nsktz)
-        if now >= current_agenda_notification_time:
+        if now >= workday_begin_notification_time:
             await send_todo_for_today_notification(now)
-            current_agenda_notification_time = nsktz.localize(datetime(2021, 5, 21, 9, 0))
-            logging.info('new current_agenda_notification_time %s', current_agenda_notification_time)
-        if now >= end_of_workday_notification_time:
+            workday_begin_notification_time = nsktz.localize(datetime(2021, 5, 21, 9, 0))
+            logging.info('new current_agenda_notification_time %s', workday_begin_notification_time)
+        if now >= workday_end_notification_time:
             await send_end_of_work_day_reminder()
-            end_of_workday_notification_time = nsktz.localize(datetime(2021, 5, 21, 16, 30))
-            logging.info('new end_of_workday_notification_time %s', end_of_workday_notification_time)
+            workday_end_notification_time = nsktz.localize(datetime(2021, 5, 21, 16, 30))
+            logging.info('new end_of_workday_notification_time %s', workday_end_notification_time)
         await asyncio.sleep(30)
 
 
 async def on_startup(_):
-    global end_of_workday_reminder_config
+    global workday_begin_config, workday_end_config
     async with OrmSession() as session:
-        end_of_workday_reminder_settings_obj = await session.get(BotSettings, 'end_of_workday_reminder')
-        if end_of_workday_reminder_settings_obj:
-            end_of_workday_reminder_config = end_of_workday_reminder_settings_obj.content
-            logging.info(json.dumps(end_of_workday_reminder_config, indent=4, sort_keys=True))
+        workday_begin_settings_obj = await session.get(BotSettings, 'workday_begin')
+        workday_end_settings_obj = await session.get(BotSettings, 'workday_end')
+        if workday_begin_settings_obj and workday_end_settings_obj:
+            workday_begin_config = workday_begin_settings_obj.content
+            workday_end_config = workday_end_settings_obj.content
+            logging.info(json.dumps(workday_begin_config, indent=4, sort_keys=True))
+            logging.info(json.dumps(workday_end_config, indent=4, sort_keys=True))
         else:
-            logging.error('Section "end_of_workday_reminder" is absent in db')
+            logging.error('Both sections "workday_begin" and "workday_end" must be present in db')
             exit(1)
     asyncio.create_task(send_reminder())
 
