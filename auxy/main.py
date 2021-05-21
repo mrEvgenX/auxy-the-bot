@@ -184,7 +184,7 @@ async def create_todo_list_for_tomorrow(message: types.Message):
                 reply_message_content.append(text(':pushpin: ' + parsed_item))
             reply_message_content += [
                 text(''),
-                text('Завтра я напомню об этом. Чтобы увидеть все прямо сейчас, наберите, пожалуйста /planned')
+                text('Завтра я напомню об этом. Чтобы посмотреть планы в любой момент, можно набрать /planned')
             ]
             await session.commit()
             await message.reply(emojize(text(*reply_message_content, sep='\n')))
@@ -210,7 +210,7 @@ async def send_todo_for_today_notification(now):
             .order_by(DailyTodoList.created_dt.desc())
         todo_lists_result = await session.execute(select_stmt)
         for todo_list in todo_lists_result.scalars():
-            logging.info('processing todo list %s %s %s', todo_list.user_id, todo_list.id)
+            logging.info('processing todo list user_id=%s list_id=%s', todo_list.user_id, todo_list.id)
             message_content = [
                 text('Вот, что вы на сегодня планировали:'),
                 text('')
