@@ -7,8 +7,7 @@ Create Date: 2021-05-21 17:58:05.938184
 """
 from alembic import op
 import sqlalchemy as sa
-from dateutil.relativedelta import MO, TU, WE, TH, FR
-from auxy.models import BotSettings
+from auxy.db.models import BotSettings
 
 
 # revision identifiers, used by Alembic.

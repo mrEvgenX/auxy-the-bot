@@ -5,13 +5,13 @@ import asyncio
 from aiogram import Bot, Dispatcher, executor, types
 from aiogram.utils.emoji import emojize
 from aiogram.utils.markdown import text
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker, selectinload
+from sqlalchemy.orm import selectinload
 from sqlalchemy.future import select
 from dateutil.relativedelta import relativedelta
 import pytz
-from .settings import TELEGRAM_BOT_API_TOKEN, DATABASE_URI, WHITELISTED_USERS
-from .models import BotSettings, User, DailyTodoList, TodoItem
+from auxy.settings import TELEGRAM_BOT_API_TOKEN, WHITELISTED_USERS
+from auxy.db import OrmSession
+from auxy.db.models import BotSettings, User, DailyTodoList, TodoItem
 from .middleware import WhitelistMiddleware
 from .datetime_planner import next_working_day
 
@@ -20,8 +20,7 @@ logging.basicConfig(level=logging.INFO)
 bot = Bot(token=TELEGRAM_BOT_API_TOKEN)
 dp = Dispatcher(bot)
 
-orm_engine = create_async_engine(DATABASE_URI, echo=True)
-OrmSession = sessionmaker(orm_engine, expire_on_commit=False, class_=AsyncSession)
+
 workday_begin_config = dict()
 workday_end_config = dict()
 notification_time_cache = dict()

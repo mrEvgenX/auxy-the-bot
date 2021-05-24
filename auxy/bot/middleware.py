@@ -2,7 +2,7 @@ import asyncio
 from aiogram import types
 from aiogram.dispatcher.middlewares import BaseMiddleware
 from aiogram.dispatcher.handler import CancelHandler
-from .settings import SUPERUSERS
+from auxy.settings import SUPERUSERS
 
 
 class WhitelistMiddleware(BaseMiddleware):
