@@ -63,13 +63,13 @@ def upgrade():
         {
             'section': 'workday_begin',
             'content': {
-                'reminder_timings': {
-                    MO.weekday: {'hour': 9, 'minute': 0, 'second': 0, 'microsecond': 0},
-                    TU.weekday: {'hour': 9, 'minute': 0, 'second': 0, 'microsecond': 0},
-                    WE.weekday: {'hour': 9, 'minute': 0, 'second': 0, 'microsecond': 0},
-                    TH.weekday: {'hour': 9, 'minute': 0, 'second': 0, 'microsecond': 0},
-                    FR.weekday: {'hour': 9, 'minute': 0, 'second': 0, 'microsecond': 0},
-                }
+                'reminder_timings': [
+                    {'weekday': 0, 'hour': 9, 'minute': 0, 'second': 0, 'microsecond': 0},
+                    {'weekday': 1, 'hour': 9, 'minute': 0, 'second': 0, 'microsecond': 0},
+                    {'weekday': 2, 'hour': 9, 'minute': 0, 'second': 0, 'microsecond': 0},
+                    {'weekday': 3, 'hour': 9, 'minute': 0, 'second': 0, 'microsecond': 0},
+                    {'weekday': 4, 'hour': 9, 'minute': 0, 'second': 0, 'microsecond': 0},
+                ]
             }
         }, {
             'section': 'workday_end',
@@ -78,13 +78,13 @@ def upgrade():
                                  'Но перед тем, как закончить, пожалуйста, '
                                  'составьте план на завтра и пришлите его мне.\n'
                                  'Утром я напомню о том, что вы собирались сделать.',
-                'reminder_timings': {
-                    MO.weekday: {'hour': 18, 'minute': 30, 'second': 0, 'microsecond': 0},
-                    TU.weekday: {'hour': 17, 'minute': 30, 'second': 0, 'microsecond': 0},
-                    WE.weekday: {'hour': 16, 'minute': 30, 'second': 0, 'microsecond': 0},
-                    TH.weekday: {'hour': 18, 'minute': 30, 'second': 0, 'microsecond': 0},
-                    FR.weekday: {'hour': 16, 'minute': 0, 'second': 0, 'microsecond': 0},
-                },
+                'reminder_timings': [
+                    {'weekday': 0, 'hour': 18, 'minute': 30, 'second': 0, 'microsecond': 0},
+                    {'weekday': 1, 'hour': 17, 'minute': 30, 'second': 0, 'microsecond': 0},
+                    {'weekday': 2, 'hour': 16, 'minute': 30, 'second': 0, 'microsecond': 0},
+                    {'weekday': 3, 'hour': 18, 'minute': 30, 'second': 0, 'microsecond': 0},
+                    {'weekday': 4, 'hour': 16, 'minute': 0, 'second': 0, 'microsecond': 0},
+                ],
             }
         }
     ])

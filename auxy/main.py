@@ -24,6 +24,7 @@ orm_engine = create_async_engine(DATABASE_URI, echo=True)
 OrmSession = sessionmaker(orm_engine, expire_on_commit=False, class_=AsyncSession)
 workday_begin_config = dict()
 workday_end_config = dict()
+notification_time_cache = dict()
 
 
 @dp.message_handler(chat_type=types.ChatType.PRIVATE, commands='start')
@@ -223,33 +224,34 @@ async def send_todo_for_today_notification(now):
             await bot.send_message(todo_list.user_id, emojize(text(*message_content, sep='\n')))
 
 
+def get_next_notification_time(now, timings):
+    possible_times = [now + relativedelta(**timing) for timing in timings]
+    return min(*[possible_time for possible_time in possible_times if possible_time > now])
+
+
 async def send_reminder():
+    global notification_time_cache
     nsktz = pytz.timezone('Asia/Novosibirsk')
     now = datetime.now(nsktz)
-    possible_times = [
-        now + relativedelta(weekday=int(weekday), **timing)
-        for weekday, timing in workday_end_config['reminder_timings'].items()
-    ]
-    workday_end_notification_time = min(*[possible_time for possible_time in possible_times if possible_time > now])
-
-    possible_times = [
-        now + relativedelta(weekday=int(weekday), **timing)
-        for weekday, timing in workday_begin_config['reminder_timings'].items()
-    ]
-    workday_begin_notification_time = min(*[possible_time for possible_time in possible_times if possible_time > now])
+    workday_begin_notification_time = get_next_notification_time(now, workday_begin_config['reminder_timings'])
+    workday_end_notification_time = get_next_notification_time(now, workday_end_config['reminder_timings'])
 
     logging.info('workday_begin_notification_time %s', workday_begin_notification_time)
     logging.info('workday_end_notification_time %s', workday_end_notification_time)
     while True:
         now = datetime.now(nsktz)
-        if now >= workday_begin_notification_time:
+
+        next_notification_time = notification_time_cache.get('workday_begin')
+        if next_notification_time and now >= next_notification_time:
             await send_todo_for_today_notification(now)
-            workday_begin_notification_time = nsktz.localize(datetime(2021, 5, 21, 9, 0))
-            logging.info('new current_agenda_notification_time %s', workday_begin_notification_time)
-        if now >= workday_end_notification_time:
+            logging.info('new workday_begin_notification_time %s', workday_begin_notification_time)
+        notification_time_cache['workday_begin'] = get_next_notification_time(now, workday_begin_config['reminder_timings'])
+
+        next_notification_time = notification_time_cache.get('workday_end')
+        if next_notification_time and now >= workday_end_notification_time:
             await send_end_of_work_day_reminder()
-            workday_end_notification_time = nsktz.localize(datetime(2021, 5, 21, 16, 30))
-            logging.info('new end_of_workday_notification_time %s', workday_end_notification_time)
+            logging.info('new workday_end_notification_time %s', workday_end_notification_time)
+        notification_time_cache['workday_end'] = get_next_notification_time(now, workday_end_config['reminder_timings'])
         await asyncio.sleep(30)
 
 
