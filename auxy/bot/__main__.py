@@ -1,6 +1,7 @@
 import logging
 import json
 from datetime import datetime
+import enum
 import asyncio
 from aiogram import Bot, Dispatcher, executor, types
 from aiogram.utils.emoji import emojize
@@ -24,6 +25,11 @@ dp = Dispatcher(bot)
 workday_begin_config = dict()
 workday_end_config = dict()
 notification_time_cache = dict()
+
+
+class TodoListFor(enum.Enum):
+    today = 1
+    tomorrow = 2
 
 
 @dp.message_handler(chat_type=types.ChatType.PRIVATE, commands='start')
@@ -144,15 +150,23 @@ async def todo_for_next_time(message: types.Message):
 
 
 @dp.message_handler(chat_type=types.ChatType.PRIVATE)
-async def create_todo_list_for_tomorrow(message: types.Message):
+async def create_todo_list(message: types.Message):
     # TODO use reply_to_message https://core.telegram.org/bots/api#message
     sender = message.from_user
     dt = message.date
-    todo_list_for_day = next_working_day(dt).date()
+    for_day = TodoListFor.tomorrow
+    for entity in message.entities:
+        if entity.type == 'hashtag' and entity.get_text(message.text) in ['#сегодня', '#today']:
+            for_day = TodoListFor.today
     async with OrmSession() as session:
         user = await session.get(User, sender.id)
         parsed_todo_items = parse_todo_list_message(message)
         if user and parsed_todo_items:
+            if for_day == TodoListFor.tomorrow:
+                todo_list_for_day = next_working_day(dt).date()
+            else:
+                todo_list_for_day = dt.date()
+
             reply_message_content = []
             select_stmt = select(DailyTodoList) \
                 .options(selectinload(DailyTodoList.items)) \
@@ -164,7 +178,10 @@ async def create_todo_list_for_tomorrow(message: types.Message):
             todo_lists_result = await session.execute(select_stmt)
             tomorrow_todo_list = todo_lists_result.scalars().first()
             if tomorrow_todo_list:
-                reply_message_content += [text('К тому, что вы уже запланировали я добавлю:'), text('')]
+                if for_day == TodoListFor.tomorrow:
+                    reply_message_content += [text('К тому, что вы уже запланировали я добавлю:'), text('')]
+                else:
+                    reply_message_content += [text('К вашим сегодняшним планам я добавлю:'), text('')]
             else:
                 tomorrow_todo_list = DailyTodoList(
                     user_id=user.id,
@@ -172,7 +189,13 @@ async def create_todo_list_for_tomorrow(message: types.Message):
                     for_day=todo_list_for_day
                 )
                 session.add(tomorrow_todo_list)
-                reply_message_content += [text('Я запишу, что вы запланировали:'), text('')]
+                if for_day == TodoListFor.tomorrow:
+                    reply_message_content += [text('Я запишу, что вы запланировали:'), text('')]
+                else:
+                    reply_message_content += [text('План составлен не с вечера, '
+                                                   'но и день в день - тоже замечательно. '
+                                                   'Вот, пожалуйста:'),
+                                              text('')]
             for parsed_item in parsed_todo_items:
                 todo_item = TodoItem(
                     user_id=user.id,
@@ -182,10 +205,15 @@ async def create_todo_list_for_tomorrow(message: types.Message):
                 session.add(todo_item)
                 tomorrow_todo_list.items.append(todo_item)
                 reply_message_content.append(text(':pushpin: ' + parsed_item))
-            reply_message_content += [
-                text(''),
-                text('Завтра я напомню об этом. Чтобы посмотреть планы в любой момент, можно набрать /planned')
-            ]
+            reply_message_content.append(text(''))
+            if for_day == TodoListFor.tomorrow:
+                reply_message_content += [
+                    text('Завтра я напомню об этом. Чтобы посмотреть планы в любой момент, можно набрать /planned')
+                ]
+            else:
+                reply_message_content += [
+                    text('Чтобы свериться со списком запланированных дел, можно набрать /todo')
+                ]
             await session.commit()
             await message.reply(emojize(text(*reply_message_content, sep='\n')))
 
