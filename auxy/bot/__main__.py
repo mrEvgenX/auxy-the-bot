@@ -13,7 +13,7 @@ from auxy.settings import TELEGRAM_BOT_API_TOKEN, WHITELISTED_USERS
 from auxy.db import OrmSession
 from auxy.db.models import BotSettings, User, DailyTodoList, TodoItem
 from .middleware import WhitelistMiddleware
-from .datetime_planner import next_working_day
+from .utils import next_working_day, parse_todo_list_message
 
 
 logging.basicConfig(level=logging.INFO)
@@ -143,22 +143,22 @@ async def todo_for_next_time(message: types.Message):
             await message.answer(emojize(text(*message_content, sep='\n')))
 
 
-@dp.message_handler()
+@dp.message_handler(chat_type=types.ChatType.PRIVATE)
 async def create_todo_list_for_tomorrow(message: types.Message):
     # TODO use reply_to_message https://core.telegram.org/bots/api#message
-    # TODO научиться дополнять сегодняшние планы, а не только создавать/дополнять завтрашние
-    sender = message['from']
-    dt = message['date']
+    sender = message.from_user
+    dt = message.date
+    todo_list_for_day = next_working_day(dt).date()
     async with OrmSession() as session:
-        user = await session.get(User, sender['id'])
-        if user:
+        user = await session.get(User, sender.id)
+        parsed_todo_items = parse_todo_list_message(message)
+        if user and parsed_todo_items:
             reply_message_content = []
-            parsed_items = [item for item in map(lambda s: s.strip(), message['text'].split('- ')) if item]
             select_stmt = select(DailyTodoList) \
                 .options(selectinload(DailyTodoList.items)) \
                 .where(
                     DailyTodoList.user_id == user.id,
-                    DailyTodoList.for_day == next_working_day(dt).date(),
+                    DailyTodoList.for_day == todo_list_for_day,
                 ) \
                 .order_by(DailyTodoList.created_dt.desc())
             todo_lists_result = await session.execute(select_stmt)
@@ -169,11 +169,11 @@ async def create_todo_list_for_tomorrow(message: types.Message):
                 tomorrow_todo_list = DailyTodoList(
                     user_id=user.id,
                     created_dt=dt,
-                    for_day=next_working_day(dt).date()
+                    for_day=todo_list_for_day
                 )
                 session.add(tomorrow_todo_list)
                 reply_message_content += [text('Я запишу, что вы запланировали:'), text('')]
-            for parsed_item in parsed_items:
+            for parsed_item in parsed_todo_items:
                 todo_item = TodoItem(
                     user_id=user.id,
                     text=parsed_item,
