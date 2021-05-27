@@ -232,26 +232,25 @@ async def send_reminder():
     global notification_time_cache
     nsktz = pytz.timezone('Asia/Novosibirsk')
     now = datetime.now(nsktz)
-    workday_begin_notification_time = get_next_notification_time(now, workday_begin_config['reminder_timings'])
-    workday_end_notification_time = get_next_notification_time(now, workday_end_config['reminder_timings'])
-
-    logging.info('workday_begin_notification_time %s', workday_begin_notification_time)
-    logging.info('workday_end_notification_time %s', workday_end_notification_time)
+    notification_time_cache['workday_begin'] = get_next_notification_time(now, workday_begin_config['reminder_timings'])
+    notification_time_cache['workday_end'] = get_next_notification_time(now, workday_end_config['reminder_timings'])
+    logging.info('workday_begin_notification_time %s', notification_time_cache['workday_begin'])
+    logging.info('workday_end_notification_time %s', notification_time_cache['workday_end'])
     while True:
         now = datetime.now(nsktz)
 
         next_notification_time = notification_time_cache.get('workday_begin')
         if next_notification_time and now >= next_notification_time:
             await send_todo_for_today_notification(now)
-            logging.info('new workday_begin_notification_time %s', workday_begin_notification_time)
+            logging.info('new workday_begin_notification_time %s', next_notification_time)
         notification_time_cache['workday_begin'] = get_next_notification_time(now, workday_begin_config['reminder_timings'])
 
         next_notification_time = notification_time_cache.get('workday_end')
-        if next_notification_time and now >= workday_end_notification_time:
+        if next_notification_time and now >= next_notification_time:
             await send_end_of_work_day_reminder()
-            logging.info('new workday_end_notification_time %s', workday_end_notification_time)
+            logging.info('new workday_begin_notification_time %s', next_notification_time)
         notification_time_cache['workday_end'] = get_next_notification_time(now, workday_end_config['reminder_timings'])
-        await asyncio.sleep(30)
+        await asyncio.sleep(10)
 
 
 async def on_startup(_):
