@@ -50,3 +50,13 @@ class TodoItem(Base):
     user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'))
     text = Column(Text, nullable=False)
     created_dt = Column(DateTime(timezone=True), nullable=False)
+    log_messages = relationship("TodoItemLogMessage")
+
+
+class TodoItemLogMessage(Base):
+    __tablename__ = 'todo_item_log_messages'
+
+    id = Column(Integer, primary_key=True)
+    todo_item_id = Column(Integer, ForeignKey('todo_items.id', ondelete='CASCADE'))
+    text = Column(Text, nullable=False)
+    created_dt = Column(DateTime(timezone=True), nullable=False)

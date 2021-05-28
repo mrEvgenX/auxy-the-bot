@@ -1,6 +1,7 @@
 import logging
 import json
 from datetime import datetime
+import re
 import enum
 import asyncio
 from aiogram import Bot, Dispatcher, executor, types
@@ -12,7 +13,7 @@ from dateutil.relativedelta import relativedelta
 import pytz
 from auxy.settings import TELEGRAM_BOT_API_TOKEN, WHITELISTED_USERS
 from auxy.db import OrmSession
-from auxy.db.models import BotSettings, User, DailyTodoList, TodoItem
+from auxy.db.models import BotSettings, User, DailyTodoList, TodoItem, TodoItemLogMessage
 from .middleware import WhitelistMiddleware
 from .utils import next_working_day, parse_todo_list_message
 
@@ -88,7 +89,9 @@ async def todo_for_today(message: types.Message):
         user = await session.get(User, sender['id'])
         if user:
             select_stmt = select(DailyTodoList) \
-                .options(selectinload(DailyTodoList.items)) \
+                .options(
+                    selectinload(DailyTodoList.items).selectinload(TodoItem.log_messages)
+                ) \
                 .where(
                     DailyTodoList.user_id == user.id,
                     DailyTodoList.for_day == dt.date(),
@@ -100,9 +103,12 @@ async def todo_for_today(message: types.Message):
                 message_content = [
                     text('Вот, что вы на сегодня планировали:'),
                     text('')
-                ] + [
-                    text(':pushpin: ' + item.text) for item in todo_list.items
-                ] + [
+                ]
+                for item in todo_list.items:
+                    message_content.append(text(':pushpin: ' + item.text))
+                    for log_message in item.log_messages:
+                        message_content.append(text('    :paperclip: ' + log_message.text))
+                message_content += [
                     text(''),
                     text('Все точно получится!')
                 ]
@@ -117,8 +123,8 @@ async def todo_for_today(message: types.Message):
 @dp.message_handler(chat_type=types.ChatType.PRIVATE, commands='planned')
 async def todo_for_next_time(message: types.Message):
     # TODO почти copy-paste, разобраться
-    sender = message['from']
-    dt = message['date']
+    sender = message.from_user
+    dt = message.date
     async with OrmSession() as session:
         user = await session.get(User, sender['id'])
         if user:
@@ -149,9 +155,58 @@ async def todo_for_next_time(message: types.Message):
             await message.answer(emojize(text(*message_content, sep='\n')))
 
 
+@dp.message_handler(chat_type=types.ChatType.PRIVATE, commands='log')
+async def log_message_about_work(message: types.Message):
+    sender = message.from_user
+    dt = message.date
+    async with OrmSession() as session:
+        user = await session.get(User, sender['id'])
+        if user:
+            mo = re.match(r'(-?\d+)\s+(.+)', message.get_args())
+            if mo:
+                item_num = int(mo.group(1)) - 1
+                log_message_text = mo.group(2)
+                select_stmt = select(DailyTodoList) \
+                    .options(selectinload(DailyTodoList.items)) \
+                    .where(
+                    DailyTodoList.user_id == user.id,
+                    DailyTodoList.for_day == dt.date(),
+                ) \
+                    .order_by(DailyTodoList.created_dt.desc())
+                todo_lists_result = await session.execute(select_stmt)
+                todo_list = todo_lists_result.scalars().first()
+                if todo_list:
+                    if item_num >= 0:
+                        if item_num < len(todo_list.items):
+                            todo_item = todo_list.items[item_num]
+                            log_message = TodoItemLogMessage(
+                                todo_item_id=todo_item.id,
+                                text=log_message_text,
+                                created_dt=dt
+                            )
+                            logging.info(log_message)
+                            session.add(log_message)
+                            await session.commit()
+                            await message.reply(emojize(text(*[
+                                text('К вот этой задаче из вашего списка дел:'),
+                                text(':pushpin: ' + todo_item.text),
+                                text('Я прикреплю ваше собщение:'),
+                                text('    :paperclip: ' + log_message_text),
+                            ], sep='\n')))
+                        else:
+                            await message.answer('В вашем плане нет столько пунктов')
+                    else:
+                        await message.answer('Пункты в плане нумеруются с единицы')
+                else:
+                    await message.answer('Извините, записи можно вести пока только по сегодняшним планам, '
+                                         'а у вас ничего не запланировано')
+            else:
+                await message.answer('Укажите, пожалуйста через пробел: порядковый номер задачи '
+                                     'из сегодняшнего списка дел и далее - свое сообщение по прогрессу')
+
+
 @dp.message_handler(chat_type=types.ChatType.PRIVATE)
 async def create_todo_list(message: types.Message):
-    # TODO use reply_to_message https://core.telegram.org/bots/api#message
     sender = message.from_user
     dt = message.date
     for_day = TodoListFor.tomorrow
@@ -218,14 +273,43 @@ async def create_todo_list(message: types.Message):
             await message.reply(emojize(text(*reply_message_content, sep='\n')))
 
 
-async def send_end_of_work_day_reminder():
+async def send_end_of_work_day_reminder(now):
     async with OrmSession() as session:
+        select_stmt = select(DailyTodoList) \
+            .options(
+                selectinload(DailyTodoList.items).selectinload(TodoItem.log_messages)
+            ) \
+            .where(
+                DailyTodoList.for_day == now.date(),
+            ) \
+            .order_by(DailyTodoList.created_dt.desc())
+        todo_lists_result = await session.execute(select_stmt)
+        today_reports = dict()
+        for todo_list in todo_lists_result.scalars():
+            report_message_part = [text('Напомню, что было сегодня:')]
+            for item in todo_list.items:
+                report_message_part.append(text(':pushpin: ' + item.text))
+                for log_message in item.log_messages:
+                    report_message_part.append(text('    :paperclip: ' + log_message.text))
+            report_message_part.append(text('Чтобы сохранить важные замечания, можете напечатать следующее:'))
+            report_message_part.append(text('/log <порядковый номер сегодняшней задачи> '
+                                            '<краткое сообщение о проделанной работе>'))
+            today_reports[todo_list.user_id] = report_message_part
+
         users_rows = await session.stream(select(User).order_by(User.id))
         async for user in users_rows.scalars():
+            reminder_text_lines = workday_end_config['reminder_text'].split('\n')
+            message_content = [
+                text(reminder_text_lines[0]),
+                text(''),
+                *today_reports.get(user.id, [text('Списка дел на сегодня не было')]),
+                text(''),
+                *list(map(text, reminder_text_lines[1:])),
+            ]
             await bot.send_message(
                 user.id,
-                workday_end_config['reminder_text']
-            )  # TODO force reply
+                emojize(text(*message_content, sep='\n'))
+            )
 
 
 async def send_todo_for_today_notification(now):
@@ -275,7 +359,7 @@ async def send_reminder():
 
         next_notification_time = notification_time_cache.get('workday_end')
         if next_notification_time and now >= next_notification_time:
-            await send_end_of_work_day_reminder()
+            await send_end_of_work_day_reminder(now)
             logging.info('new workday_begin_notification_time %s', next_notification_time)
         notification_time_cache['workday_end'] = get_next_notification_time(now, workday_end_config['reminder_timings'])
         await asyncio.sleep(10)
