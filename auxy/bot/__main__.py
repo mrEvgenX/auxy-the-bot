@@ -8,6 +8,10 @@ from aiogram import Bot, Dispatcher, executor, types
 from aiogram.utils.emoji import emojize
 from aiogram.utils.markdown import text
 from aiogram.contrib.middlewares.logging import LoggingMiddleware
+from aiogram.contrib.fsm_storage.memory import MemoryStorage
+from aiogram.dispatcher.filters import Text, HashTag
+from aiogram.dispatcher.filters.state import State, StatesGroup
+from aiogram.dispatcher import FSMContext
 from sqlalchemy.orm import selectinload
 from sqlalchemy.future import select
 from dateutil.relativedelta import relativedelta
@@ -21,7 +25,8 @@ from .utils import next_working_day, parse_todo_list_message
 
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=TELEGRAM_BOT_API_TOKEN)
-dp = Dispatcher(bot)
+storage = MemoryStorage()
+dp = Dispatcher(bot, storage=storage)
 log = logging.getLogger(__name__)
 
 
@@ -33,6 +38,11 @@ notification_time_cache = dict()
 class TodoListFor(enum.Enum):
     today = 1
     tomorrow = 2
+
+
+class LogMessageForm(StatesGroup):
+    todo_item_id = State()
+    log_message_text = State()
 
 
 @dp.message_handler(commands='start')
@@ -73,17 +83,7 @@ async def help_(message: types.Message):
 async def todo_for_today(message: types.Message, user: User):
     dt = message.date
     async with OrmSession() as session:
-        select_stmt = select(DailyTodoList) \
-            .options(
-                selectinload(DailyTodoList.items).selectinload(TodoItem.log_messages)
-            ) \
-            .where(
-                DailyTodoList.user_id == user.id,
-                DailyTodoList.for_day == dt.date(),
-            ) \
-            .order_by(DailyTodoList.created_dt.desc())
-        todo_lists_result = await session.execute(select_stmt)
-        todo_list = todo_lists_result.scalars().first()
+        todo_list = await user.get_for_day(session, dt.date(), with_log_messages=True)
         if todo_list:
             message_content = [
                 text('Вот, что вы на сегодня планировали:'),
@@ -110,15 +110,7 @@ async def todo_for_next_time(message: types.Message, user: User):
     # TODO почти copy-paste, разобраться
     dt = message.date
     async with OrmSession() as session:
-        select_stmt = select(DailyTodoList) \
-            .options(selectinload(DailyTodoList.items)) \
-            .where(
-                DailyTodoList.user_id == user.id,
-                DailyTodoList.for_day == next_working_day(dt).date(),
-            ) \
-            .order_by(DailyTodoList.created_dt.desc())
-        todo_lists_result = await session.execute(select_stmt)
-        todo_list = todo_lists_result.scalars().first()
+        todo_list = await user.get_for_day(session, next_working_day(dt).date())
         if todo_list:
             message_content = [
                 text('Вот, что запланировано вами на следующий рабочий день:'),
@@ -138,23 +130,15 @@ async def todo_for_next_time(message: types.Message, user: User):
 
 
 @dp.message_handler(commands='log')
-async def log_message_about_work(message: types.Message, user: User):
+async def log_message_about_work(message: types.Message, user: User, state: FSMContext):
     dt = message.date
     async with OrmSession() as session:
-        mo = re.match(r'(-?\d+)\s+(.+)', message.get_args())
-        if mo:
-            item_num = int(mo.group(1)) - 1
-            log_message_text = mo.group(2)
-            select_stmt = select(DailyTodoList) \
-                .options(selectinload(DailyTodoList.items)) \
-                .where(
-                DailyTodoList.user_id == user.id,
-                DailyTodoList.for_day == dt.date(),
-            ) \
-                .order_by(DailyTodoList.created_dt.desc())
-            todo_lists_result = await session.execute(select_stmt)
-            todo_list = todo_lists_result.scalars().first()
-            if todo_list:
+        todo_list = await user.get_for_day(session, dt.date())
+        if todo_list:
+            mo = re.match(r'(-?\d+)\s+(.+)', message.get_args())
+            if mo:
+                item_num = int(mo.group(1)) - 1
+                log_message_text = mo.group(2)
                 if item_num >= 0:
                     if item_num < len(todo_list.items):
                         todo_item = todo_list.items[item_num]
@@ -166,89 +150,124 @@ async def log_message_about_work(message: types.Message, user: User):
                         logging.info(log_message)
                         session.add(log_message)
                         await session.commit()
-                        await message.reply(emojize(text(*[
+                        await message.reply(emojize(text(
                             text('К вот этой задаче из вашего списка дел:'),
-                            text(':pushpin: ' + todo_item.text),
+                            text('    :pushpin: ' + todo_item.text),
                             text('Я прикреплю ваше собщение:'),
-                            text('    :paperclip: ' + log_message_text),
-                        ], sep='\n')))
+                            text('    :pencil2: ' + log_message_text),
+                            sep='\n')))
                     else:
                         await message.answer('В вашем плане нет столько пунктов')
                 else:
                     await message.answer('Пункты в плане нумеруются с единицы')
             else:
-                await message.answer('Извините, записи можно вести пока только по сегодняшним планам, '
-                                     'а у вас ничего не запланировано')
+                await LogMessageForm.todo_item_id.set()
+                await state.update_data(todo_items_texts=[todo_item.text for todo_item in todo_list.items])
+                await state.update_data(todo_items_ids=[todo_item.id for todo_item in todo_list.items])
+                await message.reply('Напишите, пожалуйста, порядковый номер сегодняшней задачи')
         else:
-            await message.answer('Укажите, пожалуйста через пробел: порядковый номер задачи '
-                                 'из сегодняшнего списка дел и далее - свое сообщение по прогрессу')
+            await message.answer('Извините, записи можно вести пока только по сегодняшним планам, '
+                                 'а у вас ничего не запланировано')
 
 
-@dp.message_handler()
-async def create_todo_list(message: types.Message, user: User):
+@dp.message_handler(lambda message: message.text.isdigit(), state=LogMessageForm.todo_item_id)
+async def process_todo_item_id(message: types.Message, state: FSMContext):
+    async with state.proxy() as data:
+        items_num = len(data['todo_items_texts'])
+        item_pos = int(message.text) - 1
+        if item_pos >= items_num:
+            await message.reply('В вашем плане нет столько пунктов')
+        else:
+            data['todo_item_in_list_pos'] = item_pos
+            await LogMessageForm.next()
+            await message.reply('А теперь свое сообщение')
+
+
+@dp.message_handler(lambda message: not message.text.isdigit(), state=LogMessageForm.todo_item_id)
+async def process_todo_item_id_invalid(message: types.Message):
+    await message.reply('Мне нужны только цифры')
+
+
+@dp.message_handler(state=LogMessageForm.log_message_text)
+async def process_log_message_text(message: types.Message, state: FSMContext):
     dt = message.date
-    for_day = TodoListFor.tomorrow
-    for entity in message.entities:
-        # TODO Use appropriate filter
-        if entity.type == 'hashtag' and entity.get_text(message.text) in ['#сегодня', '#today']:
-            for_day = TodoListFor.today
+    async with state.proxy() as data:
+        async with OrmSession() as session:
+            item_in_list_pos = data['todo_item_in_list_pos']
+            item_text = data['todo_items_texts'][item_in_list_pos]
+            item_id = data['todo_items_ids'][item_in_list_pos]
+            log_message = TodoItemLogMessage(
+                todo_item_id=item_id,
+                text=message.text,
+                created_dt=dt
+            )
+            logging.info(log_message)
+            session.add(log_message)
+            await session.commit()
+    await message.reply(emojize(text(
+        text('К вот этой задаче из вашего списка дел:'),
+        text('    :pushpin: ' + item_text),
+        text('Я прикреплю ваше собщение:'),
+        text('    :pencil2: ' + message.text),
+        sep='\n')))
+    await state.finish()
+
+
+@dp.message_handler(commands='cancel', state='*')
+@dp.message_handler(Text(equals='отмена', ignore_case=True), state='*')
+async def cancel_newrecord(message: types.Message, state: FSMContext):
+    current_state = await state.get_state()
+    if current_state is None:
+        await message.answer('В данный момент мне нечего отменять')
+    else:
+        await state.finish()
+        await message.reply('Ладно, не в этот раз')
+
+
+@dp.message_handler(HashTag(hashtags=['сегодня', 'Сегодня', 'today', 'Today']))
+async def create_today_todo_list(message: types.Message, user: User):
+    dt = message.date
     async with OrmSession() as session:
         parsed_todo_items = parse_todo_list_message(message)
         if parsed_todo_items:
-            if for_day == TodoListFor.tomorrow:
-                todo_list_for_day = next_working_day(dt).date()
-            else:
-                todo_list_for_day = dt.date()
-
-            reply_message_content = []
-            select_stmt = select(DailyTodoList) \
-                .options(selectinload(DailyTodoList.items)) \
-                .where(
-                    DailyTodoList.user_id == user.id,
-                    DailyTodoList.for_day == todo_list_for_day,
-                ) \
-                .order_by(DailyTodoList.created_dt.desc())
-            todo_lists_result = await session.execute(select_stmt)
-            tomorrow_todo_list = todo_lists_result.scalars().first()
-            if tomorrow_todo_list:
-                if for_day == TodoListFor.tomorrow:
-                    reply_message_content += [text('К тому, что вы уже запланировали я добавлю:'), text('')]
-                else:
-                    reply_message_content += [text('К вашим сегодняшним планам я добавлю:'), text('')]
-            else:
-                tomorrow_todo_list = DailyTodoList(
-                    user_id=user.id,
-                    created_dt=dt,
-                    for_day=todo_list_for_day
-                )
-                session.add(tomorrow_todo_list)
-                if for_day == TodoListFor.tomorrow:
-                    reply_message_content += [text('Я запишу, что вы запланировали:'), text('')]
-                else:
-                    reply_message_content += [text('План составлен не с вечера, '
-                                                   'но и день в день - тоже замечательно. '
-                                                   'Вот, пожалуйста:'),
-                                              text('')]
-            for parsed_item in parsed_todo_items:
-                todo_item = TodoItem(
-                    user_id=user.id,
-                    text=parsed_item,
-                    created_dt=dt
-                )
-                session.add(todo_item)
-                tomorrow_todo_list.items.append(todo_item)
-                reply_message_content.append(text(':pushpin: ' + parsed_item))
-            reply_message_content.append(text(''))
-            if for_day == TodoListFor.tomorrow:
-                reply_message_content += [
-                    text('Завтра я напомню об этом. Чтобы посмотреть планы в любой момент, можно набрать /planned')
-                ]
-            else:
-                reply_message_content += [
-                    text('Чтобы свериться со списком запланированных дел, можно набрать /todo')
-                ]
+            todo_list_for_day = dt.date()
+            new_todo_list = await user.create_new_for_day_with_items_or_append_to_existing(
+                session, todo_list_for_day, dt, parsed_todo_items
+            )
             await session.commit()
-            await message.reply(emojize(text(*reply_message_content, sep='\n')))
+            reply_message_text = text(
+                text('План составлен не с вечера, но и день в день - тоже замечательно. Вот, пожалуйста:')
+                if new_todo_list else text('К вашим сегодняшним планам я добавлю:'),
+                text(''),
+                *[text(':inbox_tray: ' + parsed_item) for parsed_item in parsed_todo_items],
+                text(''),
+                text('Чтобы свериться со списком запланированных дел, можно набрать /todo'),
+                sep='\n'
+            )
+            await message.reply(emojize(reply_message_text))
+
+
+@dp.message_handler()
+async def create_tomorrow_todo_list(message: types.Message, user: User):
+    dt = message.date
+    async with OrmSession() as session:
+        parsed_todo_items = parse_todo_list_message(message)
+        if parsed_todo_items:
+            todo_list_for_day = next_working_day(dt).date()
+            new_todo_list = await user.create_new_for_day_with_items_or_append_to_existing(
+                session, todo_list_for_day, dt, parsed_todo_items
+            )
+            await session.commit()
+            reply_message_text = text(
+                text('Я запишу, что вы запланировали:')
+                if new_todo_list else text('К тому, что вы уже запланировали я добавлю:'),
+                text(''),
+                *[text(':inbox_tray: ' + parsed_item) for parsed_item in parsed_todo_items],
+                text(''),
+                text('Завтра я напомню об этом. Чтобы посмотреть планы в любой момент, можно набрать /planned'),
+                sep='\n'
+            )
+            await message.reply(emojize(reply_message_text))
 
 
 async def send_end_of_work_day_reminder(now):

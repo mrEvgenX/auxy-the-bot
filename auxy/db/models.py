@@ -1,4 +1,5 @@
-from sqlalchemy.orm import declarative_base, relationship
+from sqlalchemy.orm import declarative_base, relationship, selectinload
+from sqlalchemy.future import select
 from sqlalchemy import Table, Column, Integer, String, DateTime, Date, JSON, Text, ForeignKey
 from sqlalchemy.schema import UniqueConstraint
 
@@ -24,6 +25,40 @@ class User(Base):
     joined_dt = Column(DateTime(timezone=True), nullable=False)
     daily_todo_lists = relationship("DailyTodoList")
     all_todo_items = relationship("TodoItem")
+
+    async def get_for_day(self, session, for_day, with_log_messages=False):
+        opts = selectinload(DailyTodoList.items)
+        if with_log_messages:
+            opts = opts.selectinload(TodoItem.log_messages)
+        select_stmt = select(DailyTodoList) \
+            .options(opts) \
+            .where(
+            DailyTodoList.user_id == self.id,
+            DailyTodoList.for_day == for_day,
+        )
+        todo_lists_result = await session.execute(select_stmt)
+        return todo_lists_result.scalars().first()
+
+    async def create_new_for_day_with_items_or_append_to_existing(self, session, for_day, now, str_items):
+        created = False
+        tomorrow_todo_list = await self.get_for_day(session, for_day)
+        if not tomorrow_todo_list:
+            tomorrow_todo_list = DailyTodoList(
+                user_id=self.id,
+                created_dt=now,
+                for_day=for_day
+            )
+            session.add(tomorrow_todo_list)
+            created = True
+        for str_item in str_items:
+            todo_item = TodoItem(
+                user_id=self.id,
+                text=str_item,
+                created_dt=now
+            )
+            session.add(todo_item)
+            tomorrow_todo_list.items.append(todo_item)
+        return created
 
 
 item_in_list_table = Table('item_in_list', Base.metadata,
