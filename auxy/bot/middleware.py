@@ -41,7 +41,7 @@ class PrivateChatOnlyMiddleware(BaseMiddleware):
             raise CancelHandler()
 
 
-class GetUserMiddleware(LifetimeControllerMiddleware):
+class GetOrCreateUserMiddleware(LifetimeControllerMiddleware):
     skip_patterns = ['error', 'update', 'channel_post', 'poll']
 
     async def pre_process(self, obj, data, *args):
@@ -50,18 +50,10 @@ class GetUserMiddleware(LifetimeControllerMiddleware):
             # TODO take care about caching
             user = await session.get(User, sender['id'])
             data['user'] = user
-            data['is_new_user'] = user is None
-
-
-class RegisterUserMiddleware(LifetimeControllerMiddleware):
-    skip_patterns = ['error', 'update', 'channel_post', 'poll']
-
-    async def pre_process(self, obj, data, *args):
-        sender = obj.from_user
-        dt = obj.date
-        if not data['user'] and data['is_new_user'] is True:
-            log.info(f'Creating user @{sender.username} with id {sender.id}')
-            async with OrmSession() as session:
+            data['is_new_user'] = False
+            if not data['user']:
+                dt = obj.date
+                log.info(f'Creating user @{sender.username} with id {sender.id}')
                 user = User(
                     id=sender.id,
                     username=sender.username,
@@ -73,3 +65,4 @@ class RegisterUserMiddleware(LifetimeControllerMiddleware):
                 session.add(user)
                 await session.commit()
                 data['user'] = user
+                data['is_new_user'] = True
