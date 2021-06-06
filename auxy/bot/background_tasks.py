@@ -33,9 +33,9 @@ async def _send_end_of_work_day_reminder(now):
         for todo_list in todo_lists_result.scalars():
             report_message_part = [text('Напомню, что было сегодня:')]
             for item in todo_list.items:
-                report_message_part.append(text(':pushpin: ' + item.text))
+                report_message_part.append(text(':pushpin:', item.text))
                 for log_message in item.log_messages:
-                    report_message_part.append(text('    :paperclip: ' + log_message.text))
+                    report_message_part.append(text('    :paperclip:', log_message.text))
             report_message_part.append(text('Чтобы сохранить важные замечания, можете напечатать следующее:'))
             report_message_part.append(text('/log <порядковый номер сегодняшней задачи> '
                                             '<краткое сообщение о проделанной работе>'))
@@ -96,12 +96,16 @@ async def send_reminder():
             logging.info(json.dumps(workday_begin_config, indent=4, sort_keys=True))
             logging.info(json.dumps(workday_end_config, indent=4, sort_keys=True))
         else:
-            logging.error('Both sections "workday_begin" and "workday_end" must be present in db')
+            logging.error('Sections "workday_begin" and "workday_end" must be present in db')
             exit(1)
     nsktz = pytz.timezone('Asia/Novosibirsk')
     now = datetime.now(nsktz)
-    notification_time_cache['workday_begin'] = get_next_notification_time(now, workday_begin_config['reminder_timings'])
-    notification_time_cache['workday_end'] = get_next_notification_time(now, workday_end_config['reminder_timings'])
+    notification_time_cache['workday_begin'] = get_next_notification_time(
+        now, workday_begin_config['reminder_timings']
+    )
+    notification_time_cache['workday_end'] = get_next_notification_time(
+        now, workday_end_config['reminder_timings']
+    )
     logging.info('workday_begin_notification_time %s', notification_time_cache['workday_begin'])
     logging.info('workday_end_notification_time %s', notification_time_cache['workday_end'])
     while True:
@@ -111,13 +115,16 @@ async def send_reminder():
         if next_notification_time and now >= next_notification_time:
             await send_todo_for_today_notification(now)
             logging.info('new workday_begin_notification_time %s', next_notification_time)
-        notification_time_cache['workday_begin'] = get_next_notification_time(now,
-                                                                              workday_begin_config['reminder_timings'])
+        notification_time_cache['workday_begin'] = get_next_notification_time(
+            now, workday_begin_config['reminder_timings']
+        )
 
         next_notification_time = notification_time_cache.get('workday_end')
         if next_notification_time and now >= next_notification_time:
             await _send_end_of_work_day_reminder(now)
             logging.info('new workday_begin_notification_time %s', next_notification_time)
-        notification_time_cache['workday_end'] = get_next_notification_time(now,
-                                                                            workday_end_config['reminder_timings'])
+        notification_time_cache['workday_end'] = get_next_notification_time(
+            now, workday_end_config['reminder_timings']
+        )
+
         await asyncio.sleep(10)

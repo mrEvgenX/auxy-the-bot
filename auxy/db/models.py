@@ -39,6 +39,20 @@ class User(Base):
         todo_lists_result = await session.execute(select_stmt)
         return todo_lists_result.scalars().first()
 
+    async def get_since(self, session, start_day, with_log_messages=False):
+        opts = selectinload(DailyTodoList.items)
+        if with_log_messages:
+            opts = opts.selectinload(TodoItem.log_messages)
+        select_stmt = select(DailyTodoList) \
+            .options(opts) \
+            .where(
+                DailyTodoList.user_id == self.id,
+                DailyTodoList.for_day >= start_day,
+            ) \
+            .order_by(DailyTodoList.for_day)
+        todo_lists_result = await session.execute(select_stmt)
+        return todo_lists_result.scalars()
+
     async def create_new_for_day_with_items_or_append_to_existing(self, session, for_day, now, str_items):
         created = False
         tomorrow_todo_list = await self.get_for_day(session, for_day)
