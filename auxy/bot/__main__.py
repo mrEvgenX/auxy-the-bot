@@ -118,61 +118,64 @@ async def todo_for_next_time(message: types.Message, user: User):
         await message.answer(emojize(text(*message_content, sep='\n')))
 
 
+@dp.message_handler(commands='cancel', state='*')
+@dp.message_handler(Text(equals='отмена', ignore_case=True), state='*')
+async def cancel_newrecord(message: types.Message, state: FSMContext):
+    current_state = await state.get_state()
+    if current_state is None:
+        await message.answer('В данный момент мне нечего отменять')
+    else:
+        await state.finish()
+        await message.reply('Ладно, не в этот раз')
+
+
 @dp.message_handler(commands='log')
 async def log_message_about_work(message: types.Message, user: User, state: FSMContext):
     dt = message.date
     async with OrmSession() as session:
         todo_list = await user.get_for_day(session, dt.date())
-        if todo_list:
-            mo = re.match(r'(-?\d+)\s+(.+)', message.get_args())
-            if mo:
-                item_num = int(mo.group(1)) - 1
-                log_message_text = mo.group(2)
-                if item_num >= 0:
-                    if item_num < len(todo_list.items):
-                        todo_item = todo_list.items[item_num]
-                        log_message = TodoItemLogMessage(
-                            todo_item_id=todo_item.id,
-                            text=log_message_text,
-                            created_dt=dt
-                        )
-                        logging.info(log_message)
-                        session.add(log_message)
-                        await session.commit()
-                        await message.reply(emojize(text(
-                            text('К вот этой задаче из вашего списка дел:'),
-                            text('    :pushpin: ' + todo_item.text),
-                            text('Я прикреплю ваше собщение:'),
-                            text('    :pencil2: ' + log_message_text),
-                            sep='\n')))
-                    else:
-                        await message.answer('В вашем плане нет столько пунктов')
-                else:
-                    await message.answer('Пункты в плане нумеруются с единицы')
-            else:
+        items_num = len(todo_list.items) if todo_list else 0
+        if items_num > 0:
+            items_texts = [todo_item.text for todo_item in todo_list.items]
+            await state.update_data(todo_items_num=items_num)
+            await state.update_data(todo_items_texts=items_texts)
+            await state.update_data(todo_items_ids=[todo_item.id for todo_item in todo_list.items])
+            if items_num > 1:
                 await LogMessageForm.todo_item_id.set()
-                await state.update_data(todo_items_texts=[todo_item.text for todo_item in todo_list.items])
-                await state.update_data(todo_items_ids=[todo_item.id for todo_item in todo_list.items])
-                await message.reply('Напишите, пожалуйста, порядковый номер сегодняшней задачи')
+                await message.reply(f'Напишите, пожалуйста, порядковый номер сегодняшней задачи от 1 до {items_num}')
+            else:
+                await state.update_data(todo_item_in_list_pos=0)
+                await LogMessageForm.log_message_text.set()
+                await message.reply(emojize(text(
+                    text('В плане один единственный пункт:'),
+                    text('    :pushpin:', items_texts[0]),
+                    text('Напишите свое сообщение и я его сохраню'),
+                    sep='\n')))
         else:
             await message.answer('Извините, записи можно вести пока только по сегодняшним планам, '
                                  'а у вас ничего не запланировано')
 
 
-@dp.message_handler(lambda message: message.text.isdigit(), state=LogMessageForm.todo_item_id)
+@dp.message_handler(lambda message: message.text.isdigit() and int(message.text) > 1, state=LogMessageForm.todo_item_id)
 async def process_todo_item_id(message: types.Message, state: FSMContext):
     async with state.proxy() as data:
-        items_num = len(data['todo_items_texts'])
+        items_num = data['todo_items_num']
         item_pos = int(message.text) - 1
         if item_pos >= items_num:
-            await message.reply('В вашем плане нет столько пунктов')
+            await message.reply(f'В вашем сегодняшнем плане нет столько пунктов, апишите число от 1 до {items_num}')
         else:
             data['todo_item_in_list_pos'] = item_pos
+            item_text = data['todo_items_texts'][item_pos]
             await LogMessageForm.next()
-            await message.reply('А теперь свое сообщение')
+            await message.reply(emojize(text(
+                text('Выбранный вами пункт:'),
+                text('    :pushpin:', item_text),
+                text('Теперь напишите само сообщение'),
+                sep='\n')))
 
 
-@dp.message_handler(lambda message: not message.text.isdigit(), state=LogMessageForm.todo_item_id)
+@dp.message_handler(lambda message: not message.text.isdigit() or int(message.text) < 1,
+                    state=LogMessageForm.todo_item_id)
 async def process_todo_item_id_invalid(message: types.Message):
     await message.reply('Мне нужны только цифры')
 
@@ -183,7 +186,6 @@ async def process_log_message_text(message: types.Message, state: FSMContext):
     async with state.proxy() as data:
         async with OrmSession() as session:
             item_in_list_pos = data['todo_item_in_list_pos']
-            item_text = data['todo_items_texts'][item_in_list_pos]
             item_id = data['todo_items_ids'][item_in_list_pos]
             log_message = TodoItemLogMessage(
                 todo_item_id=item_id,
@@ -194,9 +196,7 @@ async def process_log_message_text(message: types.Message, state: FSMContext):
             session.add(log_message)
             await session.commit()
     await message.reply(emojize(text(
-        text('К вот этой задаче из вашего списка дел:'),
-        text('    :pushpin:', item_text),
-        text('Я прикреплю ваше собщение:'),
+        text('Все, так и запишу:'),
         text('    :pencil2:', message.text),
         sep='\n')))
     await state.finish()
@@ -267,17 +267,6 @@ async def status_report(message: types.Message, user: User):
             *[text(*week, sep='') for week in grid],
             sep='\n'
         )))
-
-
-@dp.message_handler(commands='cancel', state='*')
-@dp.message_handler(Text(equals='отмена', ignore_case=True), state='*')
-async def cancel_newrecord(message: types.Message, state: FSMContext):
-    current_state = await state.get_state()
-    if current_state is None:
-        await message.answer('В данный момент мне нечего отменять')
-    else:
-        await state.finish()
-        await message.reply('Ладно, не в этот раз')
 
 
 @dp.message_handler(HashTag(hashtags=['сегодня', 'Сегодня', 'today', 'Today']))

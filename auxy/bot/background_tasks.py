@@ -37,9 +37,7 @@ async def _send_end_of_work_day_reminder(now):
                 report_message_part.append(text(':pushpin:', item.text))
                 for log_message in item.log_messages:
                     report_message_part.append(text('    :paperclip:', log_message.text))
-            report_message_part.append(text('Чтобы сохранить важные замечания, можете напечатать следующее:'))
-            report_message_part.append(text('/log <порядковый номер сегодняшней задачи> '
-                                            '<краткое сообщение о проделанной работе>'))
+            report_message_part.append(text('Чтобы сохранить важные замечания, воспользуйтесь командой /log'))
             today_reports[todo_list.user_id] = report_message_part
 
         users_rows = await session.stream(select(User).order_by(User.id))
