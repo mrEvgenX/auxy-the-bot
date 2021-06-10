@@ -1,9 +1,8 @@
 import logging
-import re
 import enum
 import asyncio
 from datetime import datetime
-from dateutil.relativedelta import relativedelta, MO, WE
+from dateutil.relativedelta import relativedelta, WE
 from aiogram import executor, types
 from aiogram.utils.emoji import emojize
 from aiogram.utils.markdown import text
@@ -15,7 +14,7 @@ from auxy.settings import WHITELISTED_USERS
 from auxy.db import OrmSession
 from auxy.db.models import User, TodoItemLogMessage
 from .middleware import WhitelistMiddleware, PrivateChatOnlyMiddleware, GetOrCreateUserMiddleware
-from .utils import next_working_day, parse_todo_list_message
+from .utils import next_working_day, parse_todo_list_message, generate_grid
 from .background_tasks import send_reminder
 from . import dp
 
@@ -200,26 +199,6 @@ async def process_log_message_text(message: types.Message, state: FSMContext):
         text('    :pencil2:', message.text),
         sep='\n')))
     await state.finish()
-
-
-def generate_grid(start_dt, end_dt):
-    grid = []
-    dt_cursor = start_dt + relativedelta(weekday=MO(-1))
-    while dt_cursor < end_dt:
-        days_b = (start_dt - dt_cursor).days
-        days_a = (end_dt - dt_cursor).days + 1
-        grid.append(
-            list(zip(
-                [':minus:'] * days_b +
-                [':white_circle:'] * (min(5, days_a) - max(days_b, 0)) +
-                [':black_circle:'] * min(2, days_a - 5, max(0, 7 - days_b)) +
-                [':minus:'] * (7 - days_a)
-                ,
-                [dt_cursor+relativedelta(days=i) for i in range(7)]
-            ))
-        )
-        dt_cursor += relativedelta(weeks=1, weekday=MO(-1))
-    return grid
 
 
 @dp.message_handler(commands=['wsr', 'msr'])

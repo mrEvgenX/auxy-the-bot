@@ -22,9 +22,9 @@ def upgrade():
         {
             'section': 'weekly_status_report',
             'content': {
-
                 'reminder_timings': [
                     {'weekday': 1, 'hour': 17, 'minute': 45, 'second': 0, 'microsecond': 0},
+                    {'weekday': 1, 'hour': 17, 'minute': 45, 'second': 0, 'microsecond': 0, 'weeks': 1},
                 ],
             }
         }
