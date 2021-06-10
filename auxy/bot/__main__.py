@@ -217,14 +217,14 @@ async def status_report(message: types.Message, user: User):
         todo_lists = await user.get_since(session, start_dt.date(), with_log_messages=True)
         message_content = []
         for todo_list in todo_lists:
-            message_content.append(text('------------'))
-            message_content.append(text(':spiral_calendar_pad:', todo_list.for_day))
-            message_content.append(text('------------'))
             for todo_item in todo_list.items:
-                message_content.append(text(':pushpin:', todo_item.text))
+                message_content.append(text(
+                    ':spiral_calendar_pad:', todo_list.for_day,
+                    ':pushpin:', todo_item.text
+                ))
                 for log_message in todo_item.log_messages:
-                    message_content.append(text('    :paperclip:', log_message.text))
-            message_content.append(text(''))
+                    message_content.append(text(':paperclip:', log_message.text))
+                message_content.append(text(''))
 
             for week in grid:
                 for i in week:
