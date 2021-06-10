@@ -97,9 +97,11 @@ async def _send_weekly_status_report(now):
             pass
 
 
-
 def get_next_notification_time(now, timings):
-    possible_times = [now + relativedelta(**timing) for timing in timings]
+    possible_times = list(filter(lambda possible_time: possible_time > now, [now + relativedelta(**timing)
+                                                                             for timing in timings]))
+    if len(possible_times) == 1:
+        return possible_times[0]
     return min(*[possible_time for possible_time in possible_times if possible_time > now])
 
 
