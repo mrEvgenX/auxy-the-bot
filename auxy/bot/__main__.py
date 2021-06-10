@@ -155,7 +155,7 @@ async def log_message_about_work(message: types.Message, user: User, state: FSMC
                                  'а у вас ничего не запланировано')
 
 
-@dp.message_handler(lambda message: message.text.isdigit() and int(message.text) > 1, state=LogMessageForm.todo_item_id)
+@dp.message_handler(lambda message: message.text.isdigit() and int(message.text) >= 1, state=LogMessageForm.todo_item_id)
 async def process_todo_item_id(message: types.Message, state: FSMContext):
     async with state.proxy() as data:
         items_num = data['todo_items_num']
@@ -176,7 +176,7 @@ async def process_todo_item_id(message: types.Message, state: FSMContext):
 @dp.message_handler(lambda message: not message.text.isdigit() or int(message.text) < 1,
                     state=LogMessageForm.todo_item_id)
 async def process_todo_item_id_invalid(message: types.Message):
-    await message.reply('Мне нужны только цифры')
+    await message.reply('Мне нужна цифра больше единицы')
 
 
 @dp.message_handler(state=LogMessageForm.log_message_text)
