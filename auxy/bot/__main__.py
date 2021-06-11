@@ -10,10 +10,10 @@ from aiogram.contrib.middlewares.logging import LoggingMiddleware
 from aiogram.dispatcher.filters import Text, HashTag
 from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.dispatcher import FSMContext
-from auxy.settings import WHITELISTED_USERS
+from auxy.settings import WHITELISTED_USERS, WHITELISTED_CHATS
 from auxy.db import OrmSession
 from auxy.db.models import User, TodoItemLogMessage
-from .middleware import WhitelistMiddleware, PrivateChatOnlyMiddleware, GetOrCreateUserMiddleware
+from .middleware import WhitelistMiddleware, GetOrCreateChatMiddleware, GetOrCreateUserMiddleware
 from .utils import next_working_day, parse_todo_list_message, generate_grid
 from .background_tasks import send_reminder
 from . import dp
@@ -38,7 +38,7 @@ async def start(message: types.Message, user: User, is_new_user: bool):
     """
     Регистрация пользователя, приветствие, краткое руководство для начала работы
     """
-    if not is_new_user:
+    if is_new_user:
         await message.answer(
             f'Привет {user.first_name}, будем знакомы! Меня назвали Окси, или Auxy по-английски.'
             'Это идет от слова auxilary - вспомогательный.\n'
@@ -300,7 +300,7 @@ async def on_startup(_):
 
 if __name__ == '__main__':
     dp.middleware.setup(LoggingMiddleware(log))
-    dp.middleware.setup(PrivateChatOnlyMiddleware())
-    dp.middleware.setup(WhitelistMiddleware(WHITELISTED_USERS))
+    dp.middleware.setup(WhitelistMiddleware(WHITELISTED_USERS, WHITELISTED_CHATS))
+    dp.middleware.setup(GetOrCreateChatMiddleware())
     dp.middleware.setup(GetOrCreateUserMiddleware())
     executor.start_polling(dp, skip_updates=True, on_startup=on_startup)

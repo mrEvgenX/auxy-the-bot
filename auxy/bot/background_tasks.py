@@ -4,7 +4,7 @@ import asyncio
 import json
 from aiogram.utils.emoji import emojize
 from aiogram.utils.markdown import text
-from sqlalchemy.orm import selectinload, joinedload
+from sqlalchemy.orm import selectinload
 from sqlalchemy.future import select
 from dateutil.relativedelta import relativedelta, WE
 import pytz

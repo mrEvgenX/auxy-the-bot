@@ -75,6 +75,15 @@ class User(Base):
         return created
 
 
+class Chat(Base):
+    __tablename__ = 'chats'
+
+    id = Column(Integer, primary_key=True, autoincrement=False)
+    type = Column(String(256))
+    username = Column(String(256))
+    joined_dt = Column(DateTime(timezone=True), nullable=False)
+
+
 item_in_list_table = Table('item_in_list', Base.metadata,
     Column('item_id', Integer, ForeignKey('todo_items.id')),
     Column('list_id', Integer, ForeignKey('daily_todo_lists.id'))
