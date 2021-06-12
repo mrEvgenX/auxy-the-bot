@@ -9,7 +9,7 @@ from sqlalchemy.future import select
 from dateutil.relativedelta import relativedelta, WE
 import pytz
 from auxy.db import OrmSession
-from auxy.db.models import Project, DailyTodoList, TodoItem
+from auxy.db.models import Project, DailyTodoList, Item
 from . import bot
 from .utils import generate_grid
 
@@ -105,7 +105,7 @@ async def end_of_work_day(session, project, now):
     logging.info('Calling at %s end_of_work_day for project%s %s', now, project.id, config)
     select_stmt = select(DailyTodoList) \
         .options(
-            selectinload(DailyTodoList.items).selectinload(TodoItem.log_messages)
+            selectinload(DailyTodoList.items).selectinload(Item.notes)
         ) \
         .where(
             DailyTodoList.project_id == project.id,
@@ -118,7 +118,7 @@ async def end_of_work_day(session, project, now):
         today_report = [text('Напомню, что было сегодня:')]
         for item in todo_list.items:
             today_report.append(text(':pushpin:', item.text))
-            for log_message in item.log_messages:
+            for log_message in item.notes:
                 today_report.append(text('    :paperclip:', log_message.text))
         today_report.append(text('Чтобы сохранить важные замечания, воспользуйтесь командой /log'))
     else:
@@ -148,7 +148,7 @@ async def weekly_status_report(session, project, now):
     select_stmt = select(DailyTodoList) \
         .options(
             selectinload(DailyTodoList.items)
-            .selectinload(TodoItem.log_messages)
+            .selectinload(Item.notes)
         ) \
         .where(
             DailyTodoList.project_id == project.id,
@@ -164,7 +164,7 @@ async def weekly_status_report(session, project, now):
                 ':spiral_calendar_pad:', todo_list.for_day,
                 ':pushpin:', todo_item.text
             ))
-            for log_message in todo_item.log_messages:
+            for log_message in todo_item.notes:
                 message_content.append(text(':paperclip:', log_message.text))
             message_content.append(text(''))
 

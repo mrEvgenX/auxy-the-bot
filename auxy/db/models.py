@@ -16,8 +16,8 @@ class User(Base):
     last_name = Column(String(256))
     lang = Column(String(64))
     joined_dt = Column(DateTime(timezone=True), nullable=False)
-    daily_todo_lists = relationship("DailyTodoList")
-    all_todo_items = relationship("TodoItem")
+    items_lists = relationship("DailyTodoList")
+    all_items = relationship("Item")
     projects = relationship("Project")
 
     async def create_new_for_day_with_items_or_append_to_existing(self, session, chat, for_day, now, str_items):
@@ -43,7 +43,7 @@ class User(Base):
             session.add(tomorrow_todo_list)
             created = True
         for str_item in str_items:
-            todo_item = TodoItem(
+            todo_item = Item(
                 user_id=self.id,
                 project_id=project.id,
                 text=str_item,
@@ -72,12 +72,12 @@ class Project(Base):
     chat_id = Column(Integer, ForeignKey('chats.id', ondelete='CASCADE'), nullable=False)
     created_dt = Column(DateTime(timezone=True), nullable=False)
     settings = Column(JSON, nullable=False)
-    __table_args__ = (UniqueConstraint('owner_user_id', 'name'),)
+    __table_args__ = (UniqueConstraint('owner_user_id', 'name', name='projects_owner_user_id_name_key'),)
 
     async def get_for_day(self, session, for_day, with_log_messages=False):
         opts = selectinload(DailyTodoList.items)
         if with_log_messages:
-            opts = opts.selectinload(TodoItem.log_messages)
+            opts = opts.selectinload(Item.notes)
         select_stmt = select(DailyTodoList) \
             .options(opts) \
             .where(
@@ -90,7 +90,7 @@ class Project(Base):
     async def get_since(self, session, start_day, with_log_messages=False):
         opts = selectinload(DailyTodoList.items)
         if with_log_messages:
-            opts = opts.selectinload(TodoItem.log_messages)
+            opts = opts.selectinload(Item.notes)
         select_stmt = select(DailyTodoList) \
             .options(opts) \
             .where(
@@ -103,7 +103,7 @@ class Project(Base):
 
 
 item_in_list_table = Table('item_in_list', Base.metadata,
-    Column('item_id', Integer, ForeignKey('todo_items.id')),
+    Column('item_id', Integer, ForeignKey('items.id')),
     Column('list_id', Integer, ForeignKey('daily_todo_lists.id'))
 )
 
@@ -116,26 +116,26 @@ class DailyTodoList(Base):
     project_id = Column(Integer, ForeignKey('projects.id'))
     created_dt = Column(DateTime(timezone=True), nullable=False)
     for_day = Column(Date, nullable=False)
-    items = relationship('TodoItem', secondary=item_in_list_table)
-    __table_args__ = (UniqueConstraint('project_id', 'for_day'),)
+    items = relationship('Item', secondary=item_in_list_table)
+    __table_args__ = (UniqueConstraint('project_id', 'for_day', name='daily_todo_lists_project_id_for_day_key'),)
 
 
-class TodoItem(Base):
-    __tablename__ = 'todo_items'
+class Item(Base):
+    __tablename__ = 'items'
 
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'))
     project_id = Column(Integer, ForeignKey('projects.id'))
     text = Column(Text, nullable=False)
     created_dt = Column(DateTime(timezone=True), nullable=False)
-    log_messages = relationship("TodoItemLogMessage")
+    notes = relationship("ItemNote")
 
 
-class TodoItemLogMessage(Base):
-    __tablename__ = 'todo_item_log_messages'
+class ItemNote(Base):
+    __tablename__ = 'item_notes'
 
     id = Column(Integer, primary_key=True)
-    todo_item_id = Column(Integer, ForeignKey('todo_items.id', ondelete='CASCADE'))
+    item_id = Column(Integer, ForeignKey('items.id', ondelete='CASCADE'))
     project_id = Column(Integer, ForeignKey('projects.id'))
     text = Column(Text, nullable=False)
     created_dt = Column(DateTime(timezone=True), nullable=False)

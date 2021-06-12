@@ -85,7 +85,7 @@ async def todo_for_today(message: types.Message, user: User, chat: Chat):
             ]
             for item in todo_list.items:
                 message_content.append(text(':pushpin:', item.text))
-                for log_message in item.log_messages:
+                for log_message in item.notes:
                     message_content.append(text('    :paperclip:', log_message.text))
             message_content += [
                 text(''),
@@ -173,7 +173,7 @@ async def status_report(message: types.Message, user: User, chat: Chat):
                     ':spiral_calendar_pad:', todo_list.for_day,
                     ':pushpin:', todo_item.text
                 ))
-                for log_message in todo_item.log_messages:
+                for log_message in todo_item.notes:
                     message_content.append(text(':paperclip:', log_message.text))
                 message_content.append(text(''))
 
