@@ -8,13 +8,13 @@ from aiogram.utils.emoji import emojize
 from aiogram.utils.markdown import text
 from aiogram.contrib.middlewares.logging import LoggingMiddleware
 from aiogram.dispatcher.filters import Text, HashTag
-from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.dispatcher import FSMContext
 from auxy.settings import WHITELISTED_USERS, WHITELISTED_CHATS
 from auxy.db import OrmSession
 from auxy.db.models import User
 from .middleware import WhitelistMiddleware, GetOrCreateChatMiddleware, GetOrCreateUserMiddleware
 from .utils import next_working_day, parse_todo_list_message, generate_grid
+from .blueprints.projects import updateprojectsettings, newproject
 from .background_tasks import send_reminder
 from .blueprints.item_logging import item_logging
 from . import dp
@@ -195,6 +195,8 @@ async def create_today_todo_list(message: types.Message, user: User):
 
 
 item_logging.apply_registration(dp)
+updateprojectsettings.apply_registration(dp)
+newproject.apply_registration(dp)
 
 
 @dp.message_handler()

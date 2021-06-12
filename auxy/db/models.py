@@ -25,6 +25,7 @@ class User(Base):
     joined_dt = Column(DateTime(timezone=True), nullable=False)
     daily_todo_lists = relationship("DailyTodoList")
     all_todo_items = relationship("TodoItem")
+    projects = relationship("Project")
 
     async def get_for_day(self, session, for_day, with_log_messages=False):
         opts = selectinload(DailyTodoList.items)
@@ -84,6 +85,18 @@ class Chat(Base):
     joined_dt = Column(DateTime(timezone=True), nullable=False)
 
 
+class Project(Base):
+    __tablename__ = 'projects'
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(256), nullable=False)
+    owner_user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    chat_id = Column(Integer, ForeignKey('chats.id', ondelete='CASCADE'), nullable=False)
+    created_dt = Column(DateTime(timezone=True), nullable=False)
+    settings = Column(JSON, nullable=False)
+    __table_args__ = (UniqueConstraint('owner_user_id', 'name'),)
+
+
 item_in_list_table = Table('item_in_list', Base.metadata,
     Column('item_id', Integer, ForeignKey('todo_items.id')),
     Column('list_id', Integer, ForeignKey('daily_todo_lists.id'))
@@ -95,10 +108,11 @@ class DailyTodoList(Base):
 
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'))
+    project_id = Column(Integer, ForeignKey('projects.id'))
     created_dt = Column(DateTime(timezone=True), nullable=False)
     for_day = Column(Date, nullable=False)
     items = relationship('TodoItem', secondary=item_in_list_table)
-    __table_args__ = (UniqueConstraint('user_id', 'for_day'),)
+    __table_args__ = (UniqueConstraint('project_id', 'for_day'),)
 
 
 class TodoItem(Base):
@@ -106,6 +120,7 @@ class TodoItem(Base):
 
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'))
+    project_id = Column(Integer, ForeignKey('projects.id'))
     text = Column(Text, nullable=False)
     created_dt = Column(DateTime(timezone=True), nullable=False)
     log_messages = relationship("TodoItemLogMessage")
@@ -116,5 +131,6 @@ class TodoItemLogMessage(Base):
 
     id = Column(Integer, primary_key=True)
     todo_item_id = Column(Integer, ForeignKey('todo_items.id', ondelete='CASCADE'))
+    project_id = Column(Integer, ForeignKey('projects.id'))
     text = Column(Text, nullable=False)
     created_dt = Column(DateTime(timezone=True), nullable=False)
