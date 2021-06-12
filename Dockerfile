@@ -15,6 +15,7 @@ WORKDIR /app
 
 COPY --from=builder /root/.local /root/.local
 COPY ./auxy ./auxy
+COPY ./modular_aiogram_handlers ./modular_aiogram_handlers
 COPY ./alembic.ini ./alembic.ini
 COPY ./docker-entrypoint.sh ./docker-entrypoint.sh
 
