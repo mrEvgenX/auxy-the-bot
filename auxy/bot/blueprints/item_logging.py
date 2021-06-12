@@ -1,11 +1,12 @@
 import logging
+from sqlalchemy.future import select
 from aiogram import types
 from aiogram.utils.emoji import emojize
 from aiogram.utils.markdown import text
 from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.dispatcher import FSMContext
 from auxy.db import OrmSession
-from auxy.db.models import User, TodoItemLogMessage
+from auxy.db.models import User, Chat, Project, TodoItemLogMessage
 from modular_aiogram_handlers import Blueprint
 
 
@@ -18,10 +19,19 @@ item_logging = Blueprint()
 
 
 @item_logging.message_handler(commands='log')
-async def log_message_about_work(message: types.Message, user: User, state: FSMContext):
+async def log_message_about_work(message: types.Message, user: User, chat: Chat, state: FSMContext):
     dt = message.date
     async with OrmSession() as session:
-        todo_list = await user.get_for_day(session, dt.date())
+        select_stmt = select(Project) \
+            .where(
+            Project.owner_user_id == user.id,
+            Project.chat_id == chat.id
+        ) \
+            .order_by(Project.id)
+        projects_result = await session.execute(select_stmt)
+        project = projects_result.scalars().first()
+
+        todo_list = await project.get_for_day(session, dt.date())
         items_num = len(todo_list.items) if todo_list else 0
         if items_num > 0:
             items_texts = [todo_item.text for todo_item in todo_list.items]
@@ -64,19 +74,29 @@ async def process_todo_item_id(message: types.Message, state: FSMContext):
 
 
 @item_logging.message_handler(lambda message: not message.text.isdigit() or int(message.text) < 1,
-                    state=LogMessageForm.todo_item_id)
+                              state=LogMessageForm.todo_item_id)
 async def process_todo_item_id_invalid(message: types.Message):
     await message.reply('Мне нужна цифра больше единицы')
 
 
 @item_logging.message_handler(state=LogMessageForm.log_message_text)
-async def process_log_message_text(message: types.Message, state: FSMContext):
+async def process_log_message_text(message: types.Message, user: User, chat: Chat, state: FSMContext):
     dt = message.date
     async with state.proxy() as data:
         async with OrmSession() as session:
+            select_stmt = select(Project)\
+                .where(
+                    Project.owner_user_id == user.id,
+                    Project.chat_id == chat.id
+                )\
+                .order_by(Project.id)
+            projects_result = await session.execute(select_stmt)
+            project = projects_result.scalars().first()
+
             item_in_list_pos = data['todo_item_in_list_pos']
             item_id = data['todo_items_ids'][item_in_list_pos]
             log_message = TodoItemLogMessage(
+                project_id=project.id,
                 todo_item_id=item_id,
                 text=message.text,
                 created_dt=dt

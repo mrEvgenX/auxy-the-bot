@@ -7,7 +7,6 @@ Create Date: 2021-05-21 17:58:05.938184
 """
 from alembic import op
 import sqlalchemy as sa
-from auxy.db.models import BotSettings
 
 
 # revision identifiers, used by Alembic.
@@ -56,37 +55,6 @@ def upgrade():
     sa.ForeignKeyConstraint(['item_id'], ['todo_items.id'], ),
     sa.ForeignKeyConstraint(['list_id'], ['daily_todo_lists.id'], )
     )
-
-    # default configuration (before becoming highly configurable by user)
-    op.bulk_insert(BotSettings.__table__, [
-        {
-            'section': 'workday_begin',
-            'content': {
-                'reminder_timings': [
-                    {'weekday': 0, 'hour': 9, 'minute': 0, 'second': 0, 'microsecond': 0},
-                    {'weekday': 1, 'hour': 9, 'minute': 0, 'second': 0, 'microsecond': 0},
-                    {'weekday': 2, 'hour': 9, 'minute': 0, 'second': 0, 'microsecond': 0},
-                    {'weekday': 3, 'hour': 9, 'minute': 0, 'second': 0, 'microsecond': 0},
-                    {'weekday': 4, 'hour': 9, 'minute': 0, 'second': 0, 'microsecond': 0},
-                ]
-            }
-        }, {
-            'section': 'workday_end',
-            'content': {
-                'reminder_text': 'Рабочий день подходит к концу, быть может пора уже закругляться?\n'
-                                 'Но перед тем, как закончить, пожалуйста, '
-                                 'составьте план на завтра и пришлите его мне.\n'
-                                 'Утром я напомню о том, что вы собирались сделать.',
-                'reminder_timings': [
-                    {'weekday': 0, 'hour': 18, 'minute': 30, 'second': 0, 'microsecond': 0},
-                    {'weekday': 1, 'hour': 17, 'minute': 30, 'second': 0, 'microsecond': 0},
-                    {'weekday': 2, 'hour': 16, 'minute': 30, 'second': 0, 'microsecond': 0},
-                    {'weekday': 3, 'hour': 18, 'minute': 30, 'second': 0, 'microsecond': 0},
-                    {'weekday': 4, 'hour': 16, 'minute': 0, 'second': 0, 'microsecond': 0},
-                ],
-            }
-        }
-    ])
     # ### end Alembic commands ###
 
 

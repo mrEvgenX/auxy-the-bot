@@ -54,6 +54,7 @@ async def step_1_callback(message: types.Message, user: User, state: FSMContext)
 
 @newproject.message_handler(content_types=types.ContentType.DOCUMENT, state=NewProjectForm.project_settigns_file)
 async def step_2_callback(message: types.Message, user: User, chat: Chat, state: FSMContext):
+    dt = message.date
     if message.document['mime_type'] == 'application/json':
         file = await bot.get_file(message.document['file_id'])
         settings = io.BytesIO()
@@ -65,6 +66,7 @@ async def step_2_callback(message: types.Message, user: User, chat: Chat, state:
                     owner_user_id=user.id,
                     name=data['project_name'],
                     chat_id=chat.id,
+                    created_dt=dt,
                     settings=s
                 )
                 session.add(project)

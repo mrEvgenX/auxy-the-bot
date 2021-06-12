@@ -3,6 +3,7 @@ import enum
 import asyncio
 from datetime import datetime
 from dateutil.relativedelta import relativedelta, WE
+from sqlalchemy.future import select
 from aiogram import executor, types
 from aiogram.utils.emoji import emojize
 from aiogram.utils.markdown import text
@@ -11,11 +12,11 @@ from aiogram.dispatcher.filters import Text, HashTag
 from aiogram.dispatcher import FSMContext
 from auxy.settings import WHITELISTED_USERS, WHITELISTED_CHATS
 from auxy.db import OrmSession
-from auxy.db.models import User
+from auxy.db.models import User, Chat, Project
 from .middleware import WhitelistMiddleware, GetOrCreateChatMiddleware, GetOrCreateUserMiddleware
 from .utils import next_working_day, parse_todo_list_message, generate_grid
 from .blueprints.projects import updateprojectsettings, newproject
-from .background_tasks import send_reminder
+from .background_tasks import notification_processing_loop
 from .blueprints.item_logging import item_logging
 from . import dp
 
@@ -64,10 +65,19 @@ async def help_(message: types.Message):
 
 
 @dp.message_handler(commands='todo')
-async def todo_for_today(message: types.Message, user: User):
+async def todo_for_today(message: types.Message, user: User, chat: Chat):
     dt = message.date
     async with OrmSession() as session:
-        todo_list = await user.get_for_day(session, dt.date(), with_log_messages=True)
+        select_stmt = select(Project) \
+            .where(
+            Project.owner_user_id == user.id,
+            Project.chat_id == chat.id
+        ) \
+            .order_by(Project.id)
+        projects_result = await session.execute(select_stmt)
+        project = projects_result.scalars().first()
+
+        todo_list = await project.get_for_day(session, dt.date(), with_log_messages=True)
         if todo_list:
             message_content = [
                 text('Вот, что вы на сегодня планировали:'),
@@ -90,11 +100,20 @@ async def todo_for_today(message: types.Message, user: User):
 
 
 @dp.message_handler(commands='planned')
-async def todo_for_next_time(message: types.Message, user: User):
+async def todo_for_next_time(message: types.Message, user: User, chat: Chat):
     # TODO почти copy-paste, разобраться
     dt = message.date
     async with OrmSession() as session:
-        todo_list = await user.get_for_day(session, next_working_day(dt).date())
+        select_stmt = select(Project) \
+            .where(
+            Project.owner_user_id == user.id,
+            Project.chat_id == chat.id
+        ) \
+            .order_by(Project.id)
+        projects_result = await session.execute(select_stmt)
+        project = projects_result.scalars().first()
+
+        todo_list = await project.get_for_day(session, next_working_day(dt).date())
         if todo_list:
             message_content = [
                 text('Вот, что запланировано вами на следующий рабочий день:'),
@@ -125,7 +144,7 @@ async def cancel_newrecord(message: types.Message, state: FSMContext):
 
 
 @dp.message_handler(commands=['wsr', 'msr'])
-async def status_report(message: types.Message, user: User):
+async def status_report(message: types.Message, user: User, chat: Chat):
     if message.get_command() == '/wsr':
         start_dt = message.date + relativedelta(weekday=WE(-1), hour=0, minute=0, second=0, microsecond=0)
         end_dt = message.date + relativedelta(weekday=WE, hour=0, minute=0, second=0, microsecond=0) \
@@ -137,7 +156,16 @@ async def status_report(message: types.Message, user: User):
     grid = [[[i[0], i[1]] for i in week] for week in grid]
 
     async with OrmSession() as session:
-        todo_lists = await user.get_since(session, start_dt.date(), with_log_messages=True)
+        select_stmt = select(Project) \
+            .where(
+            Project.owner_user_id == user.id,
+            Project.chat_id == chat.id
+        ) \
+            .order_by(Project.id)
+        projects_result = await session.execute(select_stmt)
+        project = projects_result.scalars().first()
+
+        todo_lists = await project.get_since(session, start_dt.date(), with_log_messages=True)
         message_content = []
         for todo_list in todo_lists:
             for todo_item in todo_list.items:
@@ -172,14 +200,14 @@ async def status_report(message: types.Message, user: User):
 
 
 @dp.message_handler(HashTag(hashtags=['сегодня', 'Сегодня', 'today', 'Today']))
-async def create_today_todo_list(message: types.Message, user: User):
+async def create_today_todo_list(message: types.Message, user: User, chat: Chat):
     dt = message.date
     async with OrmSession() as session:
         parsed_todo_items = parse_todo_list_message(message)
         if parsed_todo_items:
             todo_list_for_day = dt.date()
             new_todo_list = await user.create_new_for_day_with_items_or_append_to_existing(
-                session, todo_list_for_day, dt, parsed_todo_items
+                session, chat, todo_list_for_day, dt, parsed_todo_items
             )
             await session.commit()
             reply_message_text = text(
@@ -200,14 +228,14 @@ newproject.apply_registration(dp)
 
 
 @dp.message_handler()
-async def create_tomorrow_todo_list(message: types.Message, user: User):
+async def create_tomorrow_todo_list(message: types.Message, user: User, chat: Chat):
     dt = message.date
     async with OrmSession() as session:
         parsed_todo_items = parse_todo_list_message(message)
         if parsed_todo_items:
             todo_list_for_day = next_working_day(dt).date()
             new_todo_list = await user.create_new_for_day_with_items_or_append_to_existing(
-                session, todo_list_for_day, dt, parsed_todo_items
+                session, chat, todo_list_for_day, dt, parsed_todo_items
             )
             await session.commit()
             reply_message_text = text(
@@ -223,7 +251,7 @@ async def create_tomorrow_todo_list(message: types.Message, user: User):
 
 
 async def on_startup(_):
-    asyncio.create_task(send_reminder())
+    asyncio.create_task(notification_processing_loop())
 
 
 if __name__ == '__main__':

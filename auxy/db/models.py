@@ -7,13 +7,6 @@ from sqlalchemy.schema import UniqueConstraint
 Base = declarative_base()
 
 
-class BotSettings(Base):
-    __tablename__ = 'bot_settings'
-
-    section = Column(String(64), primary_key=True)
-    content = Column(JSON, nullable=False)
-
-
 class User(Base):
     __tablename__ = 'users'
 
@@ -27,39 +20,23 @@ class User(Base):
     all_todo_items = relationship("TodoItem")
     projects = relationship("Project")
 
-    async def get_for_day(self, session, for_day, with_log_messages=False):
-        opts = selectinload(DailyTodoList.items)
-        if with_log_messages:
-            opts = opts.selectinload(TodoItem.log_messages)
-        select_stmt = select(DailyTodoList) \
-            .options(opts) \
-            .where(
-            DailyTodoList.user_id == self.id,
-            DailyTodoList.for_day == for_day,
-        )
-        todo_lists_result = await session.execute(select_stmt)
-        return todo_lists_result.scalars().first()
-
-    async def get_since(self, session, start_day, with_log_messages=False):
-        opts = selectinload(DailyTodoList.items)
-        if with_log_messages:
-            opts = opts.selectinload(TodoItem.log_messages)
-        select_stmt = select(DailyTodoList) \
-            .options(opts) \
-            .where(
-                DailyTodoList.user_id == self.id,
-                DailyTodoList.for_day >= start_day,
-            ) \
-            .order_by(DailyTodoList.for_day)
-        todo_lists_result = await session.execute(select_stmt)
-        return todo_lists_result.scalars()
-
-    async def create_new_for_day_with_items_or_append_to_existing(self, session, for_day, now, str_items):
+    async def create_new_for_day_with_items_or_append_to_existing(self, session, chat, for_day, now, str_items):
         created = False
-        tomorrow_todo_list = await self.get_for_day(session, for_day)
+
+        select_stmt = select(Project) \
+            .where(
+            Project.owner_user_id == self.id,
+            Project.chat_id == chat.id
+        ) \
+            .order_by(Project.id)
+        projects_result = await session.execute(select_stmt)
+        project = projects_result.scalars().first()
+
+        tomorrow_todo_list = await project.get_for_day(session, for_day)
         if not tomorrow_todo_list:
             tomorrow_todo_list = DailyTodoList(
                 user_id=self.id,
+                project_id=project.id,
                 created_dt=now,
                 for_day=for_day
             )
@@ -68,6 +45,7 @@ class User(Base):
         for str_item in str_items:
             todo_item = TodoItem(
                 user_id=self.id,
+                project_id=project.id,
                 text=str_item,
                 created_dt=now
             )
@@ -95,6 +73,33 @@ class Project(Base):
     created_dt = Column(DateTime(timezone=True), nullable=False)
     settings = Column(JSON, nullable=False)
     __table_args__ = (UniqueConstraint('owner_user_id', 'name'),)
+
+    async def get_for_day(self, session, for_day, with_log_messages=False):
+        opts = selectinload(DailyTodoList.items)
+        if with_log_messages:
+            opts = opts.selectinload(TodoItem.log_messages)
+        select_stmt = select(DailyTodoList) \
+            .options(opts) \
+            .where(
+            DailyTodoList.project_id == self.id,
+            DailyTodoList.for_day == for_day,
+        )
+        todo_lists_result = await session.execute(select_stmt)
+        return todo_lists_result.scalars().first()
+
+    async def get_since(self, session, start_day, with_log_messages=False):
+        opts = selectinload(DailyTodoList.items)
+        if with_log_messages:
+            opts = opts.selectinload(TodoItem.log_messages)
+        select_stmt = select(DailyTodoList) \
+            .options(opts) \
+            .where(
+                DailyTodoList.project_id == self.id,
+                DailyTodoList.for_day >= start_day,
+            ) \
+            .order_by(DailyTodoList.for_day)
+        todo_lists_result = await session.execute(select_stmt)
+        return todo_lists_result.scalars()
 
 
 item_in_list_table = Table('item_in_list', Base.metadata,
