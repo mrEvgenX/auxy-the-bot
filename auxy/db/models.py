@@ -16,7 +16,7 @@ class User(Base):
     last_name = Column(String(256))
     lang = Column(String(64))
     joined_dt = Column(DateTime(timezone=True), nullable=False)
-    items_lists = relationship("DailyTodoList")
+    items_lists = relationship("ItemsList")
     all_items = relationship("Item")
     projects = relationship("Project")
 
@@ -32,25 +32,25 @@ class User(Base):
         projects_result = await session.execute(select_stmt)
         project = projects_result.scalars().first()
 
-        tomorrow_todo_list = await project.get_for_day(session, for_day)
-        if not tomorrow_todo_list:
-            tomorrow_todo_list = DailyTodoList(
+        items_list = await project.get_for_day(session, for_day)
+        if not items_list:
+            items_list = ItemsList(
                 user_id=self.id,
                 project_id=project.id,
                 created_dt=now,
                 for_day=for_day
             )
-            session.add(tomorrow_todo_list)
+            session.add(items_list)
             created = True
         for str_item in str_items:
-            todo_item = Item(
+            item = Item(
                 user_id=self.id,
                 project_id=project.id,
                 text=str_item,
                 created_dt=now
             )
-            session.add(todo_item)
-            tomorrow_todo_list.items.append(todo_item)
+            session.add(item)
+            items_list.items.append(item)
         return created
 
 
@@ -75,41 +75,41 @@ class Project(Base):
     __table_args__ = (UniqueConstraint('owner_user_id', 'name', name='projects_owner_user_id_name_key'),)
 
     async def get_for_day(self, session, for_day, with_log_messages=False):
-        opts = selectinload(DailyTodoList.items)
+        opts = selectinload(ItemsList.items)
         if with_log_messages:
             opts = opts.selectinload(Item.notes)
-        select_stmt = select(DailyTodoList) \
+        select_stmt = select(ItemsList) \
             .options(opts) \
             .where(
-            DailyTodoList.project_id == self.id,
-            DailyTodoList.for_day == for_day,
-        )
-        todo_lists_result = await session.execute(select_stmt)
-        return todo_lists_result.scalars().first()
+                ItemsList.project_id == self.id,
+                ItemsList.for_day == for_day,
+            )
+        items_lists_result = await session.execute(select_stmt)
+        return items_lists_result.scalars().first()
 
     async def get_since(self, session, start_day, with_log_messages=False):
-        opts = selectinload(DailyTodoList.items)
+        opts = selectinload(ItemsList.items)
         if with_log_messages:
             opts = opts.selectinload(Item.notes)
-        select_stmt = select(DailyTodoList) \
+        select_stmt = select(ItemsList) \
             .options(opts) \
             .where(
-                DailyTodoList.project_id == self.id,
-                DailyTodoList.for_day >= start_day,
+                ItemsList.project_id == self.id,
+                ItemsList.for_day >= start_day,
             ) \
-            .order_by(DailyTodoList.for_day)
-        todo_lists_result = await session.execute(select_stmt)
-        return todo_lists_result.scalars()
+            .order_by(ItemsList.for_day)
+        items_lists_result = await session.execute(select_stmt)
+        return items_lists_result.scalars()
 
 
 item_in_list_table = Table('item_in_list', Base.metadata,
     Column('item_id', Integer, ForeignKey('items.id')),
-    Column('list_id', Integer, ForeignKey('daily_todo_lists.id'))
+    Column('list_id', Integer, ForeignKey('items_lists.id'))
 )
 
 
-class DailyTodoList(Base):
-    __tablename__ = 'daily_todo_lists'
+class ItemsList(Base):
+    __tablename__ = 'items_lists'
 
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'))
@@ -117,7 +117,7 @@ class DailyTodoList(Base):
     created_dt = Column(DateTime(timezone=True), nullable=False)
     for_day = Column(Date, nullable=False)
     items = relationship('Item', secondary=item_in_list_table)
-    __table_args__ = (UniqueConstraint('project_id', 'for_day', name='daily_todo_lists_project_id_for_day_key'),)
+    __table_args__ = (UniqueConstraint('project_id', 'for_day', name='items_lists_project_id_for_day_key'),)
 
 
 class Item(Base):

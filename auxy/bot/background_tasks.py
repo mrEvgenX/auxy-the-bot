@@ -9,7 +9,7 @@ from sqlalchemy.future import select
 from dateutil.relativedelta import relativedelta, WE
 import pytz
 from auxy.db import OrmSession
-from auxy.db.models import Project, DailyTodoList, Item
+from auxy.db.models import Project, ItemsList, Item
 from . import bot
 from .utils import generate_grid
 
@@ -66,13 +66,13 @@ def get_next_notification_time(now, timings):
 async def todo_for_today(session, project, now):
     config = project.settings['todo_for_today']
     logging.info('Calling at %s todo_for_today for project%s %s', now, project.id, config)
-    select_stmt = select(DailyTodoList) \
-        .options(selectinload(DailyTodoList.items)) \
+    select_stmt = select(ItemsList) \
+        .options(selectinload(ItemsList.items)) \
         .where(
-            DailyTodoList.project_id == project.id,
-            DailyTodoList.for_day == now.date(),
+        ItemsList.project_id == project.id,
+        ItemsList.for_day == now.date(),
         ) \
-        .order_by(DailyTodoList.created_dt.desc())
+        .order_by(ItemsList.created_dt.desc())
     todo_lists_result = await session.execute(select_stmt)
     todo_list = todo_lists_result.scalars().first()
     if todo_list:
@@ -103,15 +103,15 @@ async def todo_for_today(session, project, now):
 async def end_of_work_day(session, project, now):
     config = project.settings['end_of_work_day']
     logging.info('Calling at %s end_of_work_day for project%s %s', now, project.id, config)
-    select_stmt = select(DailyTodoList) \
+    select_stmt = select(ItemsList) \
         .options(
-            selectinload(DailyTodoList.items).selectinload(Item.notes)
+            selectinload(ItemsList.items).selectinload(Item.notes)
         ) \
         .where(
-            DailyTodoList.project_id == project.id,
-            DailyTodoList.for_day == now.date(),
+        ItemsList.project_id == project.id,
+        ItemsList.for_day == now.date(),
         ) \
-        .order_by(DailyTodoList.created_dt.desc())
+        .order_by(ItemsList.created_dt.desc())
     todo_lists_result = await session.execute(select_stmt)
     todo_list = todo_lists_result.scalars().first()
     if todo_list:
@@ -145,16 +145,16 @@ async def weekly_status_report(session, project, now):
     end_dt = now + relativedelta(weekday=WE, hour=0, minute=0, second=0, microsecond=0) - relativedelta(days=1)
     grid = generate_grid(start_dt, end_dt)
     grid = [[[i[0], i[1]] for i in week] for week in grid]
-    select_stmt = select(DailyTodoList) \
+    select_stmt = select(ItemsList) \
         .options(
-            selectinload(DailyTodoList.items)
+            selectinload(ItemsList.items)
             .selectinload(Item.notes)
         ) \
         .where(
-            DailyTodoList.project_id == project.id,
-            DailyTodoList.for_day >= start_dt.date(),
+        ItemsList.project_id == project.id,
+        ItemsList.for_day >= start_dt.date(),
         ) \
-        .order_by(DailyTodoList.for_day)
+        .order_by(ItemsList.for_day)
     project_daily_todo_lists = await session.execute(select_stmt)
 
     message_content = []

@@ -9,12 +9,12 @@ def next_working_day(dt, **kwargs):
     return next_day
 
 
-def parse_todo_list_message(message: types.Message):
-    todo_items = []
+def get_bulleted_items_list_from_message(message: types.Message):
+    items = []
     for message_line in message['text'].split('\n'):
         if message_line.startswith('-') or message_line.startswith('*'):
-            todo_items.append(message_line[1:].strip())
-    return todo_items
+            items.append(message_line[1:].strip())
+    return items
 
 
 def generate_grid(start_dt, end_dt):

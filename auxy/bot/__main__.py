@@ -14,7 +14,7 @@ from auxy.settings import WHITELISTED_USERS, WHITELISTED_CHATS
 from auxy.db import OrmSession
 from auxy.db.models import User, Chat, Project
 from .middleware import WhitelistMiddleware, GetOrCreateChatMiddleware, GetOrCreateUserMiddleware
-from .utils import next_working_day, parse_todo_list_message, generate_grid
+from .utils import next_working_day, get_bulleted_items_list_from_message, generate_grid
 from .blueprints.projects import updateprojectsettings, newproject
 from .background_tasks import notification_processing_loop
 from .blueprints.item_logging import item_logging
@@ -203,7 +203,7 @@ async def status_report(message: types.Message, user: User, chat: Chat):
 async def create_today_todo_list(message: types.Message, user: User, chat: Chat):
     dt = message.date
     async with OrmSession() as session:
-        parsed_todo_items = parse_todo_list_message(message)
+        parsed_todo_items = get_bulleted_items_list_from_message(message)
         if parsed_todo_items:
             todo_list_for_day = dt.date()
             new_todo_list = await user.create_new_for_day_with_items_or_append_to_existing(
@@ -231,7 +231,7 @@ newproject.apply_registration(dp)
 async def create_tomorrow_todo_list(message: types.Message, user: User, chat: Chat):
     dt = message.date
     async with OrmSession() as session:
-        parsed_todo_items = parse_todo_list_message(message)
+        parsed_todo_items = get_bulleted_items_list_from_message(message)
         if parsed_todo_items:
             todo_list_for_day = next_working_day(dt).date()
             new_todo_list = await user.create_new_for_day_with_items_or_append_to_existing(
