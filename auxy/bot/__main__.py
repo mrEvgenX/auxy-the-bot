@@ -14,7 +14,7 @@ from auxy.settings import WHITELISTED_USERS, WHITELISTED_CHATS
 from auxy.db import OrmSession
 from auxy.db.models import User, Chat, Project
 from .middleware import WhitelistMiddleware, GetOrCreateChatMiddleware, GetOrCreateUserMiddleware
-from .utils import next_working_day, get_bulleted_items_list_from_message, generate_grid
+from auxy.utils import get_bulleted_items_list_from_message, generate_grid, PeriodBucket
 from .blueprints.projects import updateprojectsettings, newproject
 from .background_tasks import notification_processing_loop
 from .blueprints.item_logging import item_logging
@@ -77,13 +77,14 @@ async def todo_for_today(message: types.Message, user: User, chat: Chat):
         projects_result = await session.execute(select_stmt)
         project = projects_result.scalars().first()
 
-        todo_list = await project.get_for_day(session, dt.date(), with_log_messages=True)
+        bucket = PeriodBucket.new(project.period_bucket_mode, dt)
+        todo_list = await project.get_for_period(session, bucket, with_log_messages=True)
         if todo_list:
             message_content = [
                 text('Вот, что вы на сегодня планировали:'),
                 text('')
             ]
-            for item in todo_list.items:
+            for item in sorted(todo_list.items, key=lambda i: i.id):
                 message_content.append(text(':pushpin:', item.text))
                 for log_message in item.notes:
                     message_content.append(text('    :paperclip:', log_message.text))
@@ -113,13 +114,14 @@ async def todo_for_next_time(message: types.Message, user: User, chat: Chat):
         projects_result = await session.execute(select_stmt)
         project = projects_result.scalars().first()
 
-        todo_list = await project.get_for_day(session, next_working_day(dt).date())
+        bucket = PeriodBucket.new(project.period_bucket_mode, dt)
+        todo_list = await project.get_for_period(session, bucket.get_next())
         if todo_list:
             message_content = [
                 text('Вот, что запланировано вами на следующий рабочий день:'),
                 text('')
             ] + [
-                text(':pushpin: ' + item.text) for item in todo_list.items
+                text(':pushpin: ' + item.text) for item in sorted(todo_list.items, key=lambda i: i.id)
             ] + [
                 text(''),
                 text('Но не отвлекайтесь, пожалуйста.')
@@ -134,7 +136,7 @@ async def todo_for_next_time(message: types.Message, user: User, chat: Chat):
 
 @dp.message_handler(commands='cancel', state='*')
 @dp.message_handler(Text(equals='отмена', ignore_case=True), state='*')
-async def cancel_newrecord(message: types.Message, state: FSMContext):
+async def cancel_command(message: types.Message, state: FSMContext):
     current_state = await state.get_state()
     if current_state is None:
         await message.answer('В данный момент мне нечего отменять')
@@ -164,23 +166,26 @@ async def status_report(message: types.Message, user: User, chat: Chat):
             .order_by(Project.id)
         projects_result = await session.execute(select_stmt)
         project = projects_result.scalars().first()
+        from_period = PeriodBucket.new(project.period_bucket_mode, start_dt)
 
-        todo_lists = await project.get_since(session, start_dt.date(), with_log_messages=True)
+        todo_lists = await project.get_since(session, from_period, with_log_messages=True)
         message_content = []
         for todo_list in todo_lists:
+            bucket = PeriodBucket.get_by_key(todo_list.period_bucket_key)
             for todo_item in todo_list.items:
                 message_content.append(text(
-                    ':spiral_calendar_pad:', todo_list.for_day,
+                    ':spiral_calendar_pad:', str(bucket),
                     ':pushpin:', todo_item.text
                 ))
                 for log_message in todo_item.notes:
                     message_content.append(text(':paperclip:', log_message.text))
                 message_content.append(text(''))
 
-            for week in grid:
-                for i in week:
-                    if i[1].date() == todo_list.for_day:
-                        i[0] = i[0].replace('white', 'purple')
+            if bucket.start():
+                for week in grid:
+                    for i in week:
+                        if i[1].date() == bucket.start().date():
+                            i[0] = i[0].replace('white', 'purple')
 
         import io
         file = io.StringIO(emojize(text(*message_content, sep='\n')))
@@ -205,9 +210,18 @@ async def create_today_todo_list(message: types.Message, user: User, chat: Chat)
     async with OrmSession() as session:
         parsed_todo_items = get_bulleted_items_list_from_message(message)
         if parsed_todo_items:
-            todo_list_for_day = dt.date()
-            new_todo_list = await user.create_new_for_day_with_items_or_append_to_existing(
-                session, chat, todo_list_for_day, dt, parsed_todo_items
+            select_stmt = select(Project) \
+                .where(
+                Project.owner_user_id == user.id,
+                Project.chat_id == chat.id
+            ) \
+                .order_by(Project.id)
+            projects_result = await session.execute(select_stmt)
+            project = projects_result.scalars().first()
+
+            bucket = PeriodBucket.new(project.period_bucket_mode, dt)
+            new_todo_list = await project.create_new_for_day_with_items_or_append_to_existing(
+                session, bucket, dt, parsed_todo_items
             )
             await session.commit()
             reply_message_text = text(
@@ -233,9 +247,18 @@ async def create_tomorrow_todo_list(message: types.Message, user: User, chat: Ch
     async with OrmSession() as session:
         parsed_todo_items = get_bulleted_items_list_from_message(message)
         if parsed_todo_items:
-            todo_list_for_day = next_working_day(dt).date()
-            new_todo_list = await user.create_new_for_day_with_items_or_append_to_existing(
-                session, chat, todo_list_for_day, dt, parsed_todo_items
+            select_stmt = select(Project) \
+                .where(
+                Project.owner_user_id == user.id,
+                Project.chat_id == chat.id
+            ) \
+                .order_by(Project.id)
+            projects_result = await session.execute(select_stmt)
+            project = projects_result.scalars().first()
+
+            bucket = PeriodBucket.new(project.period_bucket_mode, dt)
+            new_todo_list = await project.create_new_for_day_with_items_or_append_to_existing(
+                session, bucket.get_next(), dt, parsed_todo_items
             )
             await session.commit()
             reply_message_text = text(

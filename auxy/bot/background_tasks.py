@@ -11,7 +11,8 @@ import pytz
 from auxy.db import OrmSession
 from auxy.db.models import Project, ItemsList, Item
 from . import bot
-from .utils import generate_grid
+from auxy.utils import generate_grid
+from auxy.utils import PeriodBucket
 
 
 notification_time_cache = dict()
@@ -66,11 +67,12 @@ def get_next_notification_time(now, timings):
 async def todo_for_today(session, project, now):
     config = project.settings['todo_for_today']
     logging.info('Calling at %s todo_for_today for project%s %s', now, project.id, config)
+    bucket = PeriodBucket.new(project.period_bucket_mode, now.date())
     select_stmt = select(ItemsList) \
         .options(selectinload(ItemsList.items)) \
         .where(
         ItemsList.project_id == project.id,
-        ItemsList.for_day == now.date(),
+        ItemsList.period_bucket_key == bucket.key(),
         ) \
         .order_by(ItemsList.created_dt.desc())
     todo_lists_result = await session.execute(select_stmt)
@@ -103,13 +105,14 @@ async def todo_for_today(session, project, now):
 async def end_of_work_day(session, project, now):
     config = project.settings['end_of_work_day']
     logging.info('Calling at %s end_of_work_day for project%s %s', now, project.id, config)
+    bucket = PeriodBucket.new(project.period_bucket_mode, now.date())
     select_stmt = select(ItemsList) \
         .options(
             selectinload(ItemsList.items).selectinload(Item.notes)
         ) \
         .where(
         ItemsList.project_id == project.id,
-        ItemsList.for_day == now.date(),
+        ItemsList.period_bucket_key == bucket.key(),
         ) \
         .order_by(ItemsList.created_dt.desc())
     todo_lists_result = await session.execute(select_stmt)
@@ -145,6 +148,7 @@ async def weekly_status_report(session, project, now):
     end_dt = now + relativedelta(weekday=WE, hour=0, minute=0, second=0, microsecond=0) - relativedelta(days=1)
     grid = generate_grid(start_dt, end_dt)
     grid = [[[i[0], i[1]] for i in week] for week in grid]
+    bucket = PeriodBucket.new(project.period_bucket_mode, start_dt.date())
     select_stmt = select(ItemsList) \
         .options(
             selectinload(ItemsList.items)
@@ -152,26 +156,28 @@ async def weekly_status_report(session, project, now):
         ) \
         .where(
         ItemsList.project_id == project.id,
-        ItemsList.for_day >= start_dt.date(),
+        ItemsList.period_bucket_key >= bucket.key(),
         ) \
-        .order_by(ItemsList.for_day)
+        .order_by(ItemsList.period_bucket_key)
     project_daily_todo_lists = await session.execute(select_stmt)
 
     message_content = []
     for todo_list in project_daily_todo_lists.scalars():
+        bucket = PeriodBucket.get_by_key(todo_list.period_bucket_key)
         for todo_item in todo_list.items:
             message_content.append(text(
-                ':spiral_calendar_pad:', todo_list.for_day,
+                ':spiral_calendar_pad:', str(bucket),
                 ':pushpin:', todo_item.text
             ))
             for log_message in todo_item.notes:
                 message_content.append(text(':paperclip:', log_message.text))
             message_content.append(text(''))
 
-        for week in grid:
-            for i in week:
-                if i[1].date() == todo_list.for_day:
-                    i[0] = i[0].replace('white', 'purple')
+        if bucket.start():
+            for week in grid:
+                for i in week:
+                    if i[1].date() == bucket.start().date():
+                        i[0] = i[0].replace('white', 'purple')
 
     import io
     file = io.StringIO(emojize(text(*message_content, sep='\n')))

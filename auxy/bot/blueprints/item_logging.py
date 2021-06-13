@@ -7,6 +7,7 @@ from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.dispatcher import FSMContext
 from auxy.db import OrmSession
 from auxy.db.models import User, Chat, Project, ItemNote
+from auxy.utils import PeriodBucket
 from modular_aiogram_handlers import Blueprint
 
 
@@ -31,7 +32,8 @@ async def log_message_about_work(message: types.Message, user: User, chat: Chat,
         projects_result = await session.execute(select_stmt)
         project = projects_result.scalars().first()
 
-        items_list = await project.get_for_day(session, dt.date())
+        bucket = PeriodBucket.new(project.period_bucket_mode, dt)
+        items_list = await project.get_for_period(session, bucket)
         items_num = len(items_list.items) if items_list else 0
         if items_num > 0:
             items_texts = [item.text for item in items_list.items]
