@@ -1,9 +1,8 @@
-from datetime import datetime
 from sqlalchemy.orm import declarative_base, relationship, selectinload
 from sqlalchemy.future import select
-from sqlalchemy import Table, Column, Integer, String, DateTime, Date, JSON, Text, ForeignKey, Enum
+from sqlalchemy import Table, Column, Integer, String, DateTime, JSON, Text, ForeignKey, Enum
 from sqlalchemy.schema import UniqueConstraint
-from auxy.utils import PeriodBucket, PeriodBucketModes
+from auxy.utils import PeriodBucket, PeriodBucketModes, ItemStatus
 
 
 Base = declarative_base()
@@ -43,7 +42,7 @@ class Project(Base):
     __table_args__ = (UniqueConstraint('owner_user_id', 'name', name='projects_owner_user_id_name_key'),)
 
     async def get_for_period(self, session, period_bucket: PeriodBucket, with_log_messages=False):
-        opts = selectinload(ItemsList.items)
+        opts = selectinload(ItemsList.items.and_(Item.status == ItemStatus.active))
         if with_log_messages:
             opts = opts.selectinload(Item.notes)
         select_stmt = select(ItemsList) \
@@ -69,7 +68,7 @@ class Project(Base):
         items_lists_result = await session.execute(select_stmt)
         return items_lists_result.scalars()
 
-    async def create_new_for_day_with_items_or_append_to_existing(self, session, period: PeriodBucket, now, str_items):
+    async def create_new_for_period_with_items_or_append_to_existing(self, session, period: PeriodBucket, now, str_items):
         created = False
 
         items_list = await self.get_for_period(session, period)
@@ -77,7 +76,6 @@ class Project(Base):
             items_list = ItemsList(
                 project_id=self.id,
                 created_dt=now,
-                for_day=datetime(1999, 1, 1),
                 period_bucket_key=period.key()
             )
             session.add(items_list)
@@ -105,7 +103,6 @@ class ItemsList(Base):
     id = Column(Integer, primary_key=True)
     project_id = Column(Integer, ForeignKey('projects.id', ondelete='CASCADE'))
     created_dt = Column(DateTime(timezone=True), nullable=False)
-    for_day = Column(Date, nullable=False)
     period_bucket_key = Column(String(32))
     items = relationship('Item', secondary=item_in_list_table)
     __table_args__ = (
@@ -123,6 +120,7 @@ class Item(Base):
     id = Column(Integer, primary_key=True)
     project_id = Column(Integer, ForeignKey('projects.id', ondelete='CASCADE'))
     text = Column(Text, nullable=False)
+    status = Column(Enum(ItemStatus), default=ItemStatus.active)
     created_dt = Column(DateTime(timezone=True), nullable=False)
     notes = relationship("ItemNote")
 

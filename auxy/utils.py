@@ -14,6 +14,12 @@ class PeriodBucketModes(enum.Enum):
     perpetual = 'perpetual'
 
 
+class ItemStatus(enum.Enum):
+    active = 1
+    done = 2
+    rejected = 3
+
+
 def next_working_day(dt, **kwargs):
     next_day = dt + relativedelta(days=+1, **kwargs)
     if next_day.isoweekday() in [6, 7]:

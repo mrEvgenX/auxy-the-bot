@@ -18,6 +18,7 @@ from auxy.utils import get_bulleted_items_list_from_message, generate_grid, Peri
 from .blueprints.projects import updateprojectsettings, newproject
 from .background_tasks import notification_processing_loop
 from .blueprints.item_logging import item_logging
+from .blueprints.item_status_changing import item_status_changing
 from . import dp
 
 
@@ -65,14 +66,13 @@ async def help_(message: types.Message):
 
 
 @dp.message_handler(commands='todo')
-async def todo_for_today(message: types.Message, user: User, chat: Chat):
+async def todo_for_today(message: types.Message, chat: Chat):
     dt = message.date
     async with OrmSession() as session:
         select_stmt = select(Project) \
             .where(
-            Project.owner_user_id == user.id,
-            Project.chat_id == chat.id
-        ) \
+                Project.chat_id == chat.id
+            ) \
             .order_by(Project.id)
         projects_result = await session.execute(select_stmt)
         project = projects_result.scalars().first()
@@ -101,27 +101,27 @@ async def todo_for_today(message: types.Message, user: User, chat: Chat):
 
 
 @dp.message_handler(commands='planned')
-async def todo_for_next_time(message: types.Message, user: User, chat: Chat):
+async def todo_for_next_time(message: types.Message, chat: Chat):
     # TODO почти copy-paste, разобраться
     dt = message.date
     async with OrmSession() as session:
         select_stmt = select(Project) \
             .where(
-            Project.owner_user_id == user.id,
-            Project.chat_id == chat.id
-        ) \
+                Project.chat_id == chat.id
+            ) \
             .order_by(Project.id)
         projects_result = await session.execute(select_stmt)
         project = projects_result.scalars().first()
 
-        bucket = PeriodBucket.new(project.period_bucket_mode, dt)
-        todo_list = await project.get_for_period(session, bucket.get_next())
+        bucket = PeriodBucket.new(project.period_bucket_mode, dt).get_next()
+        todo_list = await project.get_for_period(session, bucket)
         if todo_list:
             message_content = [
                 text('Вот, что запланировано вами на следующий рабочий день:'),
                 text('')
             ] + [
-                text(':pushpin: ' + item.text) for item in sorted(todo_list.items, key=lambda i: i.id)
+                text(':pushpin: ' + item.text)
+                for item in sorted(todo_list.items, key=lambda i: i.id)
             ] + [
                 text(''),
                 text('Но не отвлекайтесь, пожалуйста.')
@@ -142,11 +142,11 @@ async def cancel_command(message: types.Message, state: FSMContext):
         await message.answer('В данный момент мне нечего отменять')
     else:
         await state.finish()
-        await message.reply('Ладно, не в этот раз')
+        await message.reply('Ладно, не в этот раз', reply_markup=types.ReplyKeyboardRemove())
 
 
 @dp.message_handler(commands=['wsr', 'msr'])
-async def status_report(message: types.Message, user: User, chat: Chat):
+async def status_report(message: types.Message, chat: Chat):
     if message.get_command() == '/wsr':
         start_dt = message.date + relativedelta(weekday=WE(-1), hour=0, minute=0, second=0, microsecond=0)
         end_dt = message.date + relativedelta(weekday=WE, hour=0, minute=0, second=0, microsecond=0) \
@@ -160,9 +160,8 @@ async def status_report(message: types.Message, user: User, chat: Chat):
     async with OrmSession() as session:
         select_stmt = select(Project) \
             .where(
-            Project.owner_user_id == user.id,
-            Project.chat_id == chat.id
-        ) \
+                Project.chat_id == chat.id
+            ) \
             .order_by(Project.id)
         projects_result = await session.execute(select_stmt)
         project = projects_result.scalars().first()
@@ -205,22 +204,21 @@ async def status_report(message: types.Message, user: User, chat: Chat):
 
 
 @dp.message_handler(HashTag(hashtags=['сегодня', 'Сегодня', 'today', 'Today']))
-async def create_today_todo_list(message: types.Message, user: User, chat: Chat):
+async def create_today_todo_list(message: types.Message, chat: Chat):
     dt = message.date
     async with OrmSession() as session:
         parsed_todo_items = get_bulleted_items_list_from_message(message)
         if parsed_todo_items:
             select_stmt = select(Project) \
                 .where(
-                Project.owner_user_id == user.id,
-                Project.chat_id == chat.id
-            ) \
+                    Project.chat_id == chat.id
+                ) \
                 .order_by(Project.id)
             projects_result = await session.execute(select_stmt)
             project = projects_result.scalars().first()
 
             bucket = PeriodBucket.new(project.period_bucket_mode, dt)
-            new_todo_list = await project.create_new_for_day_with_items_or_append_to_existing(
+            new_todo_list = await project.create_new_for_period_with_items_or_append_to_existing(
                 session, bucket, dt, parsed_todo_items
             )
             await session.commit()
@@ -239,25 +237,25 @@ async def create_today_todo_list(message: types.Message, user: User, chat: Chat)
 item_logging.apply_registration(dp)
 updateprojectsettings.apply_registration(dp)
 newproject.apply_registration(dp)
+item_status_changing.apply_registration(dp)
 
 
 @dp.message_handler()
-async def create_tomorrow_todo_list(message: types.Message, user: User, chat: Chat):
+async def create_tomorrow_todo_list(message: types.Message, chat: Chat):
     dt = message.date
     async with OrmSession() as session:
         parsed_todo_items = get_bulleted_items_list_from_message(message)
         if parsed_todo_items:
             select_stmt = select(Project) \
                 .where(
-                Project.owner_user_id == user.id,
-                Project.chat_id == chat.id
-            ) \
+                    Project.chat_id == chat.id
+                ) \
                 .order_by(Project.id)
             projects_result = await session.execute(select_stmt)
             project = projects_result.scalars().first()
 
             bucket = PeriodBucket.new(project.period_bucket_mode, dt)
-            new_todo_list = await project.create_new_for_day_with_items_or_append_to_existing(
+            new_todo_list = await project.create_new_for_period_with_items_or_append_to_existing(
                 session, bucket.get_next(), dt, parsed_todo_items
             )
             await session.commit()

@@ -63,7 +63,7 @@ async def process_item_id(message: types.Message, state: FSMContext):
         items_num = data['items_num']
         item_pos = int(message.text) - 1
         if item_pos >= items_num:
-            await message.reply(f'В вашем сегодняшнем плане нет столько пунктов, апишите число от 1 до {items_num}')
+            await message.reply(f'В вашем сегодняшнем плане нет столько пунктов, напишите число от 1 до {items_num}')
         else:
             data['item_in_list_pos'] = item_pos
             item_text = data['items_texts'][item_pos]
@@ -88,7 +88,6 @@ async def process_note_text(message: types.Message, user: User, chat: Chat, stat
         async with OrmSession() as session:
             select_stmt = select(Project)\
                 .where(
-                    Project.owner_user_id == user.id,
                     Project.chat_id == chat.id
                 )\
                 .order_by(Project.id)
