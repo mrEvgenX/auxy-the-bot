@@ -1,6 +1,6 @@
 from sqlalchemy.orm import declarative_base, relationship, selectinload
 from sqlalchemy.future import select
-from sqlalchemy import Table, Column, Integer, String, DateTime, JSON, Text, ForeignKey, Enum
+from sqlalchemy import Table, Column, Integer, String, DateTime, JSON, Text, ForeignKey, Enum, BigInteger
 from sqlalchemy.schema import UniqueConstraint
 from auxy.utils import PeriodBucket, PeriodBucketModes, ItemStatus
 
@@ -11,7 +11,7 @@ Base = declarative_base()
 class User(Base):
     __tablename__ = 'users'
 
-    id = Column(Integer, primary_key=True, autoincrement=False)
+    id = Column(BigInteger, primary_key=True, autoincrement=False)
     username = Column(String(256))
     first_name = Column(String(256))
     last_name = Column(String(256))
@@ -23,7 +23,7 @@ class User(Base):
 class Chat(Base):
     __tablename__ = 'chats'
 
-    id = Column(Integer, primary_key=True, autoincrement=False)
+    id = Column(BigInteger, primary_key=True, autoincrement=False)
     type = Column(String(256))
     username = Column(String(256))
     joined_dt = Column(DateTime(timezone=True), nullable=False)
