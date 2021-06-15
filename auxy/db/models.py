@@ -35,7 +35,7 @@ class Project(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String(256), nullable=False)
     owner_user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
-    chat_id = Column(Integer, ForeignKey('chats.id', ondelete='CASCADE'), nullable=False)
+    chat_id = Column(BigInteger, ForeignKey('chats.id', ondelete='CASCADE'), nullable=False)
     created_dt = Column(DateTime(timezone=True), nullable=False)
     period_bucket_mode = Column(Enum(PeriodBucketModes))
     settings = Column(JSON, nullable=False)
