@@ -21,14 +21,13 @@ item_logging = Blueprint()
 
 
 @item_logging.message_handler(commands='log')
-async def log_message_about_work(message: types.Message, user: User, chat: Chat, state: FSMContext):
+async def log_message_about_work(message: types.Message, chat: Chat, state: FSMContext):
     dt = message.date
     async with OrmSession() as session:
         select_stmt = select(Project) \
             .where(
-            Project.owner_user_id == user.id,
-            Project.chat_id == chat.id
-        ) \
+                Project.chat_id == chat.id
+            ) \
             .order_by(Project.id)
         projects_result = await session.execute(select_stmt)
         project = projects_result.scalars().first()
