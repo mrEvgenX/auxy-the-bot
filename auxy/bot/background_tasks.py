@@ -90,14 +90,13 @@ async def todo_for_today(session, project, now):
         await bot.send_message(
             project.chat_id,
             emojize(text(*message_content, sep='\n')),
-            parse_mode=types.ParseMode.MARKDOWN
+            parse_mode=types.ParseMode.MARKDOWN,
+            disable_web_page_preview=True,
         )
     else:
         await bot.send_message(
             project.chat_id,
-            text(
-                'У вас с вечера не составлены планы.', 'Предлагаю составить их прямо сейчас.'
-            ),
+            text('У вас с вечера не составлены планы.', 'Предлагаю составить их прямо сейчас.'),
             parse_mode=types.ParseMode.MARKDOWN
         )
 
@@ -137,7 +136,8 @@ async def end_of_work_day(session, project, now):
     ]
     await bot.send_message(
         project.chat_id,
-        emojize(text(*message_content, sep='\n'))
+        emojize(text(*message_content, sep='\n')),
+        disable_web_page_preview=True,
     )
 
 

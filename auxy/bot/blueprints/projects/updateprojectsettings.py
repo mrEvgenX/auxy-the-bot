@@ -36,7 +36,7 @@ async def start_project_settings_updating(message: types.Message, user: User):
             await UpdateProjectSettingsForm.project_name.set()
             await message.reply(
                 'Выберите проект',
-                reply_markup=types.ReplyKeyboardMarkup(keyboard=keyboard)
+                reply_markup=types.ReplyKeyboardMarkup(keyboard=keyboard, selective=True)
             )
         else:
             await message.reply('У вас нет проектов')
@@ -57,7 +57,7 @@ async def receive_project_name(message: types.Message, user: User, state: FSMCon
             await UpdateProjectSettingsForm.next()
             await message.reply(
                 'Проект ' + message.text + '\nПришлите, пожалуйста, json-файл с настройками',
-                reply_markup=types.ReplyKeyboardRemove()
+                reply_markup=types.ForceReply(selective=True)
             )
         else:
             await message.reply(
@@ -68,10 +68,10 @@ async def receive_project_name(message: types.Message, user: User, state: FSMCon
 @updateprojectsettings.message_handler(content_types=types.ContentType.DOCUMENT,
                                        state=UpdateProjectSettingsForm.project_settigns_file)
 async def receive_new_project_settings(message: types.Message, user: User, state: FSMContext):
-    if message.document['mime_type'] == 'application/json':
-        file = await bot.get_file(message.document['file_id'])
-        settings = io.BytesIO()
-        await file.download(settings)
+    file = await bot.get_file(message.document['file_id'])
+    settings = io.BytesIO()
+    await file.download(settings)
+    try:
         s = json.load(settings)
         async with OrmSession() as session:
             async with state.proxy() as data:
@@ -80,13 +80,21 @@ async def receive_new_project_settings(message: types.Message, user: User, state
             await session.commit()
         await message.reply(
             text(
-                text('Проект', project.name, 'создан'),
+                text('Проект', project.name),
                 text('Новые настройки для проекта', project.name),
                 code(json.dumps(s, indent=4, sort_keys=True)),
                 sep='\n'
             ),
             parse_mode=types.ParseMode.MARKDOWN
         )
-    else:
-        await message.reply('Нужен json-файл')
-    await state.finish()
+        await state.finish()
+    except json.decoder.JSONDecodeError:
+        await message.reply(
+            'Это совсем не похоже на json-файл, пришлите другой файл',
+            reply_markup=types.ForceReply(selective=True)
+        )
+    except UnicodeDecodeError:
+        await message.reply(
+            'Это совсем не похоже на json-файл, у него вообще неизвестный бинарный формат, пришлите другой файл',
+            reply_markup=types.ForceReply(selective=True)
+        )

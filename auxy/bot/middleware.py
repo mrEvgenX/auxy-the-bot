@@ -70,11 +70,14 @@ class GetOrCreateUserMiddleware(LifetimeControllerMiddleware):
 
 
 class GetOrCreateChatMiddleware(LifetimeControllerMiddleware):
-    skip_patterns = ['error', 'update', 'inline_query', 'chosen_inline_result', 'shipping_query',
-                     'pre_checkout_query', 'poll', 'poll_answer']
+    skip_patterns = ['error', 'update', 'inline_query', 'chosen_inline_result', 'callback_query'
+                     'shipping_query', 'pre_checkout_query', 'poll', 'poll_answer']
 
     async def pre_process(self, obj, data, *args):
-        sender_chat = types.Chat.get_current()
+        if isinstance(obj, types.ChatMemberUpdated):
+            sender_chat = types.ChatMemberUpdated.get_current().chat
+        else:
+            sender_chat = types.Chat.get_current()
         async with OrmSession() as session:
             # TODO take care about caching
             chat = await session.get(Chat, sender_chat.id)

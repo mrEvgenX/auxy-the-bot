@@ -1,3 +1,4 @@
+import re
 import logging
 from sqlalchemy.future import select
 from aiogram import types
@@ -42,47 +43,65 @@ async def log_message_about_work(message: types.Message, user: User, chat: Chat,
             await state.update_data(items_ids=[item.id for item in items_list.items])
             if items_num > 1:
                 await AddNoteToItemForm.item_id.set()
-                await message.reply(f'Напишите, пожалуйста, порядковый номер сегодняшней задачи от 1 до {items_num}')
+                keyboard = [
+                    [types.KeyboardButton(f'{i+1}. {txt if len(txt) < 32 else txt[:29] + "..."}')]
+                    for i, txt in enumerate(items_texts)
+                ]
+                await message.reply(
+                    f'Напишите, пожалуйста, порядковый номер сегодняшней задачи от 1 до {items_num}',
+                    reply_markup=types.ReplyKeyboardMarkup(keyboard=keyboard, selective=True)
+                )
             else:
                 await state.update_data(item_in_list_pos=0)
                 await AddNoteToItemForm.note_text.set()
-                await message.reply(emojize(text(
-                    text('В плане один единственный пункт:'),
-                    text('    :pushpin:', items_texts[0]),
-                    text('Напишите свое сообщение и я его сохраню'),
-                    sep='\n')))
+                await message.reply(
+                    emojize(text(
+                        text('В плане один единственный пункт:'),
+                        text('    :pushpin:', items_texts[0]),
+                        text('Напишите свое сообщение и я его сохраню'),
+                        sep='\n'
+                    )),
+                    reply_markup=types.ForceReply(selective=True),
+                    disable_web_page_preview=True
+                )
         else:
             await message.answer('Извините, записи можно вести пока только по сегодняшним планам, '
                                  'а у вас ничего не запланировано')
 
 
-@item_logging.message_handler(lambda message: message.text.isdigit() and int(message.text) >= 1,
-                              state=AddNoteToItemForm.item_id)
+@item_logging.message_handler(state=AddNoteToItemForm.item_id)
 async def process_item_id(message: types.Message, state: FSMContext):
     async with state.proxy() as data:
-        items_num = data['items_num']
-        item_pos = int(message.text) - 1
-        if item_pos >= items_num:
-            await message.reply(f'В вашем сегодняшнем плане нет столько пунктов, напишите число от 1 до {items_num}')
+        mo = re.match(r'(\d+)(?:\. )?(.*)', message.text)
+        if mo:
+            item_in_list_pos = int(mo.group(1)) - 1
+            text_fragment = mo.group(2)
+            if not text_fragment or text_fragment == data['items_texts'][item_in_list_pos] or data['items_texts'][item_in_list_pos].startswith(text_fragment[:-3]):
+                items_num = data['items_num']
+                if item_in_list_pos < items_num:
+                    data['item_in_list_pos'] = item_in_list_pos
+                    item_text = data['items_texts'][item_in_list_pos]
+                    await AddNoteToItemForm.next()
+                    await message.reply(
+                        emojize(text(
+                            text('Выбранный вами пункт:'),
+                            text('    :pushpin:', item_text),
+                            text('Теперь напишите само сообщение'),
+                            sep='\n'
+                        )),
+                        reply_markup=types.ForceReply(selective=True),
+                        disable_web_page_preview=True
+                    )
+                else:
+                    await message.reply(f'В вашем сегодняшнем плане нет столько пунктов, напишите число от 1 до {items_num}')
+            else:
+                await message.reply('Укажите, пожалуйста, либо просто порядковый номер без всего, либо нажмите на предложенную кнопку')
         else:
-            data['item_in_list_pos'] = item_pos
-            item_text = data['items_texts'][item_pos]
-            await AddNoteToItemForm.next()
-            await message.reply(emojize(text(
-                text('Выбранный вами пункт:'),
-                text('    :pushpin:', item_text),
-                text('Теперь напишите само сообщение'),
-                sep='\n')))
-
-
-@item_logging.message_handler(lambda message: not message.text.isdigit() or int(message.text) < 1,
-                              state=AddNoteToItemForm.item_id)
-async def process_item_id_invalid(message: types.Message):
-    await message.reply('Мне нужна цифра больше единицы')
+            await message.reply('Укажите, пожалуйста, либо просто порядковый номер без всего, либо нажмите на предложенную кнопку')
 
 
 @item_logging.message_handler(state=AddNoteToItemForm.note_text)
-async def process_note_text(message: types.Message, user: User, chat: Chat, state: FSMContext):
+async def process_note_text(message: types.Message, chat: Chat, state: FSMContext):
     dt = message.date
     async with state.proxy() as data:
         async with OrmSession() as session:
@@ -105,8 +124,12 @@ async def process_note_text(message: types.Message, user: User, chat: Chat, stat
             logging.info(log_message)
             session.add(log_message)
             await session.commit()
-    await message.reply(emojize(text(
-        text('Все, так и запишу:'),
-        text('    :pencil2:', message.text),
-        sep='\n')))
+    await message.reply(
+        emojize(text(
+            text('Все, так и запишу:'),
+            text('    :pencil2:', message.text),
+            sep='\n'
+        )),
+        disable_web_page_preview=True
+    )
     await state.finish()

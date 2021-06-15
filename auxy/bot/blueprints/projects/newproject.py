@@ -33,7 +33,10 @@ newproject = Blueprint()
 @newproject.message_handler(commands='newproject')
 async def start_new_project_creation(message: types.Message):
     await NewProjectForm.project_name.set()
-    await message.reply('Напишите короткое имя проекта')
+    await message.reply(
+        'Напишите короткое имя проекта',
+        reply_markup=types.ForceReply(selective=True)
+    )
 
 
 @newproject.message_handler(lambda message: len(message.text) <= 150, state=NewProjectForm.project_name)
@@ -56,17 +59,21 @@ async def process_project_name(message: types.Message, user: User, state: FSMCon
             ]
             await message.reply(
                 f'Выберите, когда обновлять списки задач',
-                reply_markup=types.ReplyKeyboardMarkup(keyboard=keyboard)
+                reply_markup=types.ReplyKeyboardMarkup(keyboard=keyboard, selective=True)
             )
         else:
             await message.reply(
-                f'Проект "{message.text}" уже существует'
+                f'Проект "{message.text}" уже существует, выберите другое имя',
+                reply_markup=types.ForceReply(selective=True)
             )
 
 
 @newproject.message_handler(lambda message: len(message.text) > 150, state=NewProjectForm.project_name)
 async def process_project_name_invalid(message: types.Message):
-    await message.reply(f'Ваш текст содержит много символов, целых {len(message.text)}, а можно максимум 150')
+    await message.reply(
+        f'Ваш текст содержит много символов, целых {len(message.text)}, а можно максимум 150',
+        reply_markup=types.ForceReply(selective=True)
+    )
 
 
 @newproject.message_handler(lambda message: message.text in human_period_bucket_modes.keys(),
@@ -76,7 +83,7 @@ async def process_project_period_bucket_mode(message: types.Message, state: FSMC
     await NewProjectForm.next()
     await message.reply(
         f'Теперь пришлите json-файл с настройками для нового проекта',
-        reply_markup=types.ReplyKeyboardRemove()
+        reply_markup=types.ForceReply(selective=True)
     )
 
 
@@ -92,10 +99,10 @@ async def process_project_period_bucket_mode_invalid(message: types.Message):
 @newproject.message_handler(content_types=types.ContentType.DOCUMENT, state=NewProjectForm.project_settigns_file)
 async def process_project_settigns_file(message: types.Message, user: User, chat: Chat, state: FSMContext):
     dt = message.date
-    if message.document['mime_type'] == 'application/json':
-        file = await bot.get_file(message.document['file_id'])
-        settings = io.BytesIO()
-        await file.download(settings)
+    file = await bot.get_file(message.document['file_id'])
+    settings = io.BytesIO()
+    await file.download(settings)
+    try:
         s = json.load(settings)
         async with OrmSession() as session:
             async with state.proxy() as data:
@@ -118,6 +125,9 @@ async def process_project_settigns_file(message: types.Message, user: User, chat
                     ),
                     parse_mode=types.ParseMode.MARKDOWN
                 )
-    else:
-        await message.reply('Нужен json-файл')
-    await state.finish()
+                await state.finish()
+    except json.decoder.JSONDecodeError:
+        await message.reply(
+            'Это совсем не похоже на json-файл, пришлите другой файл',
+            reply_markup=types.ForceReply(selective=True)
+        )

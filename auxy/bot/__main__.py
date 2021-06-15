@@ -109,7 +109,10 @@ async def todo_for_today(message: types.Message, chat: Chat):
                 text('Никаких планов нет.'),
                 # TODO предложение создать план и описание способа
             ]
-        await message.answer(emojize(text(*message_content, sep='\n')))
+        await message.answer(
+            emojize(text(*message_content, sep='\n')),
+            disable_web_page_preview=True,
+        )
 
 
 @dp.message_handler(commands='planned')
@@ -155,7 +158,10 @@ async def todo_for_next_time(message: types.Message, chat: Chat):
                 text('Никаких планов нет.'),
                 # TODO предложение создать план и описание способа
             ]
-        await message.answer(emojize(text(*message_content, sep='\n')))
+        await message.answer(
+            emojize(text(*message_content, sep='\n')),
+            disable_web_page_preview=True,
+        )
 
 
 @dp.message_handler(commands='cancel', state='*')
@@ -284,7 +290,10 @@ async def create_today_todo_list(message: types.Message, chat: Chat):
                     text('Чтобы свериться со списком запланированных дел, можно набрать /todo'),
                     sep='\n'
                 )
-            await message.reply(emojize(reply_message_text))
+            await message.reply(
+                emojize(reply_message_text),
+                disable_web_page_preview=True,
+            )
 
 
 item_logging.apply_registration(dp)
@@ -347,7 +356,10 @@ async def create_tomorrow_todo_list(message: types.Message, chat: Chat):
                     text('Завтра я напомню об этом. Чтобы посмотреть планы в любой момент, можно набрать /planned'),
                     sep='\n'
                 )
-            await message.reply(emojize(reply_message_text))
+            await message.reply(
+                emojize(reply_message_text),
+                disable_web_page_preview=True,
+            )
 
 
 async def on_startup(_):

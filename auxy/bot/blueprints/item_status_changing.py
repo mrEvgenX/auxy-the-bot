@@ -56,16 +56,20 @@ async def log_message_about_work(message: types.Message, user: User, chat: Chat,
                 await message.reply(
                     'Выберите, пожалуйста, задачу из списка '
                     f'текущего периода по порядковому номеру от 1 до {items_num}',
-                    reply_markup=types.ReplyKeyboardMarkup(keyboard=keyboard)
+                    reply_markup=types.ReplyKeyboardMarkup(keyboard=keyboard, selective=True)
                 )
             else:
                 items_list.items[0].status = ItemStatus[item_new_status]
                 await session.commit()
-                await message.reply(emojize(text(
-                    text('В плане один единственный пункт:'),
-                    text('    :pushpin:', items_texts[0]),
-                    text(human_item_status[items_list.items[0].status]),
-                    sep='\n')))
+                await message.reply(
+                    emojize(text(
+                        text('В плане один единственный пункт:'),
+                        text('    :pushpin:', items_texts[0]),
+                        text(human_item_status[items_list.items[0].status]),
+                        sep='\n'
+                    )),
+                    disable_web_page_preview=True
+                )
         else:
             await message.answer('Извините, у вас ничего не запланировано в ближайшее время')
 
@@ -91,10 +95,13 @@ async def process_item_id(message: types.Message, state: FSMContext):
                             text(human_item_status[item.status], ':', sep=''),
                             text(':pushpin:', item.text),
                             sep='\n')),
-                            reply_markup=types.ReplyKeyboardRemove()
+                            reply_markup=types.ReplyKeyboardRemove(),
+                            disable_web_page_preview=True
                         )
                         await state.finish()
                 else:
                     await message.reply(f'В вашем сегодняшнем плане нет столько пунктов, напишите число от 1 до {items_num}')
             else:
-                await message.reply('Укажите, пожалуйста просто порядковый номер без всего, либо нажмите на предложенную кнопку')
+                await message.reply('Укажите, пожалуйста, либо просто порядковый номер без всего, либо нажмите на предложенную кнопку')
+        else:
+            await message.reply('Укажите, пожалуйста, либо просто порядковый номер без всего, либо нажмите на предложенную кнопку')
