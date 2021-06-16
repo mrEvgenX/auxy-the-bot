@@ -124,7 +124,7 @@ async def end_of_work_day(session, project, now):
                 today_report.append(text('    :paperclip:', log_message.text))
         today_report.append(text('Чтобы сохранить важные замечания, воспользуйтесь командой /log'))
     else:
-        today_report = text('Списка дел на сегодня не было')
+        today_report = [text('Списка дел на сегодня не было')]
 
     reminder_text_lines = config['reminder_text'].split('\n')
     message_content = [
