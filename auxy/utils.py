@@ -6,25 +6,10 @@ from aiogram import types
 from dateutil.relativedelta import relativedelta, MO
 
 
-class PeriodBucketModes(enum.Enum):
-    daily = 'day'
-    weekly = 'week'
-    monthly = 'month'
-    yearly = 'year'
-    perpetual = 'perpetual'
-
-
 class ItemStatus(enum.Enum):
     active = 1
     done = 2
     rejected = 3
-
-
-def next_working_day(dt, **kwargs):
-    next_day = dt + relativedelta(days=+1, **kwargs)
-    if next_day.isoweekday() in [6, 7]:
-        return next_day + relativedelta(weekday=MO)
-    return next_day
 
 
 def get_bulleted_items_list_from_message(message: types.Message):
@@ -59,7 +44,7 @@ class PeriodBucket:
 
     @classmethod
     def new(cls, mode: 'PeriodBucketModes', dt: datetime):
-        return bucket_classes[mode.value](dt)
+        return mode.value(dt)
 
     @classmethod
     def get_by_key(cls, period_bucket_key):
@@ -84,6 +69,9 @@ class PeriodBucket:
     @abstractmethod
     def end(self) -> typing.Optional[datetime]:
         raise NotImplemented
+
+    def is_valid(self):
+        return True
 
     @abstractmethod
     def get_next(self) -> 'PeriodBucket':
@@ -126,10 +114,8 @@ class DailyBucket(PeriodBucket):
 
 class WorkingDaysBucket(DailyBucket):
 
-    def __init__(self, dt: typing.Union[str, datetime]):
-        super().__init__(dt)
-        if self._day_start.isoweekday() in [6, 7]:
-            raise ValueError(f'{dt.isoformat()} is a weekend day')
+    def is_valid(self):
+        return self._day_start.isoweekday() not in [6, 7]
 
     def get_next(self) -> 'WorkingDaysBucket':
         new_day_start = self._day_start + relativedelta(days=1)
@@ -226,6 +212,15 @@ class PerpetualBucket(PeriodBucket):
 
     def get_next(self) -> 'PerpetualBucket':
         return self
+
+
+class PeriodBucketModes(enum.Enum):
+    daily = DailyBucket
+    onworkingdays = WorkingDaysBucket
+    weekly = WeeklyBucket
+    monthly = MonthlyBucket
+    yearly = YearlyBucket
+    perpetual = PerpetualBucket
 
 
 bucket_classes = {

@@ -81,6 +81,8 @@ async def todo_for_today(message: types.Message, chat: Chat):
         todo_list = await project.get_for_period(session, bucket, with_log_messages=True)
         if project.period_bucket_mode == PeriodBucketModes.daily:
             period_bucket_word = 'на сегодня'
+        elif project.period_bucket_mode == PeriodBucketModes.onworkingdays:
+            period_bucket_word = 'на сегодня'
         elif project.period_bucket_mode == PeriodBucketModes.weekly:
             period_bucket_word = 'на текущую неделю'
         elif project.period_bucket_mode == PeriodBucketModes.monthly:
@@ -132,7 +134,9 @@ async def todo_for_next_time(message: types.Message, chat: Chat):
         todo_list = await project.get_for_period(session, bucket)
         if todo_list:
             if project.period_bucket_mode == PeriodBucketModes.daily:
-                period_bucket_word = 'на следующий день'  # TODO добавить слово "рабочий"
+                period_bucket_word = 'на следующий день'
+            elif project.period_bucket_mode == PeriodBucketModes.onworkingdays:
+                period_bucket_word = 'на следующий рабочий день'
             elif project.period_bucket_mode == PeriodBucketModes.weekly:
                 period_bucket_word = 'на следующую неделю'
             elif project.period_bucket_mode == PeriodBucketModes.monthly:
@@ -250,50 +254,56 @@ async def create_today_todo_list(message: types.Message, chat: Chat):
             project = projects_result.scalars().first()
 
             bucket = PeriodBucket.new(project.period_bucket_mode, dt)
-            new_todo_list = await project.create_new_for_period_with_items_or_append_to_existing(
-                session, bucket, dt, parsed_todo_items
-            )
-            await session.commit()
-            if project.period_bucket_mode == PeriodBucketModes.daily:
-                reply_message_text = text(
-                    text('План составлен не с вечера, но и день в день - тоже замечательно. Вот, пожалуйста:')
-                    if new_todo_list else text('К вашим сегодняшним планам я добавлю:'),
-                    text(''),
-                    *[text(':inbox_tray:', parsed_item) for parsed_item in parsed_todo_items],
-                    text(''),
-                    text('Чтобы свериться со списком запланированных дел, можно набрать /todo'),
-                    sep='\n'
+            if bucket.is_valid():
+                new_todo_list = await project.create_new_for_period_with_items_or_append_to_existing(
+                    session, bucket, dt, parsed_todo_items
+                )
+                await session.commit()
+                if project.period_bucket_mode in [PeriodBucketModes.daily, PeriodBucketModes.onworkingdays]:
+                    reply_message_text = text(
+                        text('План составлен не с вечера, но и день в день - тоже замечательно. Вот, пожалуйста:')
+                        if new_todo_list else text('К вашим сегодняшним планам я добавлю:'),
+                        text(''),
+                        *[text(':inbox_tray:', parsed_item) for parsed_item in parsed_todo_items],
+                        text(''),
+                        text('Чтобы свериться со списком запланированных дел, можно набрать /todo'),
+                        sep='\n'
+                    )
+                else:
+                    if project.period_bucket_mode == PeriodBucketModes.weekly:
+                        period_bucket_word = 'на текущую неделю'
+                    elif project.period_bucket_mode == PeriodBucketModes.monthly:
+                        period_bucket_word = 'на текущий месяц'
+                    elif project.period_bucket_mode == PeriodBucketModes.yearly:
+                        period_bucket_word = 'на текущий год'
+                    else:
+                        period_bucket_word = ''
+                    reply_message_text = text(
+                        (
+                            text('Я запишу ваши планы на ', period_bucket_word, ':', sep='')
+                            if new_todo_list else
+                            text('К вашим планам', period_bucket_word, 'я добавлю:')
+                        ) if period_bucket_word else (
+                            text('Я запишу ваши планы')
+                            if new_todo_list else
+                            text('К вашим планам я добавлю:')
+                        )
+                        ,
+                        text(''),
+                        *[text(':inbox_tray:', parsed_item) for parsed_item in parsed_todo_items],
+                        text(''),
+                        text('Чтобы свериться со списком запланированных дел, можно набрать /todo'),
+                        sep='\n'
+                    )
+                await message.reply(
+                    emojize(reply_message_text),
+                    disable_web_page_preview=True,
                 )
             else:
-                if project.period_bucket_mode == PeriodBucketModes.weekly:
-                    period_bucket_word = 'на текущую неделю'
-                elif project.period_bucket_mode == PeriodBucketModes.monthly:
-                    period_bucket_word = 'на текущий месяц'
-                elif project.period_bucket_mode == PeriodBucketModes.yearly:
-                    period_bucket_word = 'на текущий год'
-                else:
-                    period_bucket_word = ''
-                reply_message_text = text(
-                    (
-                        text('Я запишу ваши планы на ', period_bucket_word, ':', sep='')
-                        if new_todo_list else
-                        text('К вашим планам', period_bucket_word, 'я добавлю:')
-                    ) if period_bucket_word else (
-                        text('Я запишу ваши планы')
-                        if new_todo_list else
-                        text('К вашим планам я добавлю:')
-                    )
-                    ,
-                    text(''),
-                    *[text(':inbox_tray:', parsed_item) for parsed_item in parsed_todo_items],
-                    text(''),
-                    text('Чтобы свериться со списком запланированных дел, можно набрать /todo'),
-                    sep='\n'
+                await message.reply(
+                    text('Сегодня выходной, никаких планов, пожалуйста. Ничего не буду добавлять'),
+                    disable_web_page_preview=True,
                 )
-            await message.reply(
-                emojize(reply_message_text),
-                disable_web_page_preview=True,
-            )
 
 
 item_logging.apply_registration(dp)
@@ -316,9 +326,9 @@ async def create_tomorrow_todo_list(message: types.Message, chat: Chat):
             projects_result = await session.execute(select_stmt)
             project = projects_result.scalars().first()
 
-            bucket = PeriodBucket.new(project.period_bucket_mode, dt)
+            bucket = PeriodBucket.new(project.period_bucket_mode, dt).get_next()
             new_todo_list = await project.create_new_for_period_with_items_or_append_to_existing(
-                session, bucket.get_next(), dt, parsed_todo_items
+                session, bucket, dt, parsed_todo_items
             )
             await session.commit()
             if project.period_bucket_mode == PeriodBucketModes.daily:
