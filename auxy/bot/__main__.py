@@ -331,7 +331,7 @@ async def create_tomorrow_todo_list(message: types.Message, chat: Chat):
                 session, bucket, dt, parsed_todo_items
             )
             await session.commit()
-            if project.period_bucket_mode == PeriodBucketModes.daily:
+            if project.period_bucket_mode in [PeriodBucketModes.daily, PeriodBucketModes.onworkingdays]:
                 reply_message_text = text(
                     text('Я запишу, что вы запланировали:')
                     if new_todo_list else text('К тому, что вы уже запланировали я добавлю:'),
@@ -364,6 +364,7 @@ async def create_tomorrow_todo_list(message: types.Message, chat: Chat):
                     *[text(':inbox_tray: ', parsed_item) for parsed_item in parsed_todo_items],
                     text(''),
                     text('Завтра я напомню об этом. Чтобы посмотреть планы в любой момент, можно набрать /planned'),
+                    # TODO это уже связано с настройками проекта, надо вычислять дату и тип уведомления и писать тут
                     sep='\n'
                 )
             await message.reply(
