@@ -1,6 +1,7 @@
 import logging
 from datetime import datetime
 import asyncio
+import io
 from aiogram import types
 from aiogram.utils.emoji import emojize
 from aiogram.utils.markdown import text
@@ -177,8 +178,6 @@ async def weekly_status_report(session, project, now):
                     if i[1].date() == bucket.start().date():
                         i[0] = i[0].replace('white', 'purple')
 
-    import io
-    file = io.StringIO(emojize(text(*message_content, sep='\n')))
     for week in grid:
         for i in week:
             if i[1].date() == datetime.now().date():
@@ -187,14 +186,27 @@ async def weekly_status_report(session, project, now):
                 else:
                     i[0] = i[0].replace('circle', 'square')
     grid = [[i[0] for i in week] for week in grid]
-    await bot.send_document(project.chat_id, file, caption=emojize(text(
-        text(f'Отчет о проделанной работе с {start_dt.date()} по {end_dt.date()}'),
-        text(''),
-        text('Пн Вт Ср Чт Пт Сб Вс'),
-        *[text(*week, sep='') for week in grid],
-        sep='\n'
-    )))
-
+    if message_content:
+        file = io.StringIO(emojize(text(*message_content, sep='\n')))
+        await bot.send_document(project.chat_id, file, caption=emojize(text(
+            text(f'Отчет о проделанной работе с {start_dt.date()} по {end_dt.date()}'),
+            text(''),
+            text('Пн Вт Ср Чт Пт Сб Вс'),
+            *[text(*week, sep='') for week in grid],
+            sep='\n'
+        )))
+    else:
+        await bot.send_message(
+            project.chat_id,
+            emojize(text(
+                text(f'В период с {start_dt.date()} по {end_dt.date()} получается пустой отчет о проделанной работе'),
+                text(''),
+                text('Пн Вт Ср Чт Пт Сб Вс'),
+                *[text(*week, sep='') for week in grid],
+                sep='\n'
+            )),
+            disable_web_page_preview=True,
+        )
 
 actions = {
     'todo_for_today': todo_for_today,
